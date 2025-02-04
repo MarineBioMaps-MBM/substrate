@@ -1,0 +1,138 @@
+---
+title: "substrate"
+author: "mish"
+format: html
+editor: visual
+---
+
+## Set up
+
+### Load libraries
+
+```{r}
+# Load libraries
+
+# Data wrangling
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(here)
+# Mapping
+library(stars)
+library(terra)
+library(tmap)
+library(stars)
+library(sf)
+```
+
+### Read and clean substrate data
+
+```{r}
+# Path to the geodatabase folder
+gdb_path <- here('data/PMEP_biotic.gdb')
+
+# List all layers (tables and feature classes) in the geodatabase
+layers <- st_layers(gdb_path)
+
+data <- st_read(gdb_path, layer = "West_Coast_USA_Nearshore_CMECS_Substrate_Habitat_V2"
+) %>%
+# Filter to California
+   filter(State == 'CA') %>%
+# Change colnames to lower snake case
+  janitor::clean_names()
+
+data <- data %>%
+  select(-c("pmep_section", "pmep_zone", "cmecs_sc_category", 
+            "cmecs_sc_category_code", "cmecs_sc_cartography", 
+            "cmecs_sc_cartography_detail","state", "state_waters", "pmep_zone_detail", "cmecs_sc_code", "pmep_nsid", "cmecs_sc_origin", "cmecs_modifier", "link" ))
+
+```
+
+```{r}
+# Rename columns
+substrate <- data %>%
+  clean_names() %>%
+  rename(
+    region = pmep_region,
+    group = cmecs_sc_name,
+    subgroup = cmecs_sc_subgroup,
+    level_id = cmecs_sc_level,
+    class_type = cmecs_sc_class,  
+    subclass = cmecs_sc_subclass,
+    bio_gen_group = cmecs_sc_group,
+    noaa_hapc = noaa_hapc,
+    estuary_name = estuary_name,
+    area_ha = area_ha,
+    shape_length = shape_length,
+    shape_area = shape_area
+  ) %>% 
+  mutate(area_km_sub = area_ha / 100) %>%  # Convert hectares to square km
+  select(-area_ha)  # Remove the original area_ha column
+  
+# Check changes
+colnames(substrate)
+```
+
+### Read and select MPA - Point Lobos
+
+```{r}
+mpa <- st_read('data/MPA_boundaries') %>%
+  clean_names() %>%
+  filter(name == "Point Lobos SMR") %>%
+  # Select relevant columns
+  select(-c("objectid", "ccr", "area_sq_mi", "study_regi", "fullname", "ccr_int", "shortname","acres", "shape_are", "shape_len")) %>%
+  mutate(area_km_mpa = hectares / 100) %>%  # Convert hectares to square km
+  select(-hectares)
+
+```
+
+### Join substrate data to MPA
+
+```{r}
+# Check CRS of both data sets
+st_crs(substrate)== st_crs(mpa)
+
+# Match CRS
+mpa <- st_transform(mpa, crs = st_crs(substrate))
+
+# Perform spatial join: Keep MPA columns and match substrate data
+mpa_lobos <- st_join(mpa, substrate, left = TRUE)
+```
+
+```{r}
+# Find percentage of each substrate in the MPA
+mpa_lobos <- mpa_lobos %>%
+  mutate(pct_sub = (area_km_sub / area_km_mpa) * 100) %>%  # Calculate percentage
+    filter(area_km_sub <= area_km_mpa)
+```
+
+```{r}
+mpa_group <- mpa_lobos %>%
+  group_by(group) %>%
+  summarise(
+    sum_sb = sum(area_km_sub, na.rm = TRUE),  
+    sum_mpa = sum(area_km_mpa, na.rm = TRUE)  
+  ) %>%
+  mutate(pct_substrate = (sum_sb / sum_mpa) * 100)  
+
+# Visualize results
+ggplot(mpa_group, aes(x = group, y = pct_substrate)) +
+  geom_col() +
+  labs(title = "Substrate type by Area(km2) in Point Lobos SMR",
+       x = "Substrate Group",
+       y = "Percentage") +
+  theme_bw() +
+  geom_text(aes(label = round(pct_substrate, 2), hjust = 0.5, vjust = 0.01)) 
+```
+
+```{r}
+# Visualize results
+ggplot(mpa_lobos, aes(x = group, y = pct_sub, fill = group)) +
+  geom_col() +
+  labs(title = "Substrate type by Area(km2) in Point Lobos SMR",
+       x = "Substrate Group",
+       y = "Percentage") +
+  theme_bw() +
+  scale_fill_manual(values = c('#C4A9C2','#A5CEA4' )) +
+  theme(legend.position = 'none')
+```
