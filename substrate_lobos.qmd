@@ -14,6 +14,7 @@ library(tidyverse)
 library(janitor)
 library(dplyr)
 library(here)
+
 # Mapping
 library(stars)
 library(terra)
@@ -35,11 +36,11 @@ mpa <- st_read('data/MPA_boundaries') %>%
   filter(shortname == "Point Lobos")
 ```
 
-```{r}
-colnames(substrate)
-```
+## Join substrate and MPA data
 
 ```{r}
+# Original MPA lobos - Area converted using Hectares
+
 # Check CRS of both data sets
 st_crs(substrate)== st_crs(mpa)
 
@@ -50,25 +51,33 @@ mpa_lobos <- st_intersection(substrate, mpa)
 ```
 
 ```{r}
-# # Check CRS of both data sets
-# st_crs(substrate)== st_crs(mpa)
-# 
-# # Match CRS
-# mpa <- st_transform(mpa, crs = st_crs(substrate))
-# 
-# # Perform spatial join: Keep MPA columns and match substrate data
-# mpa_lobos <- st_join(mpa, substrate)
+# MPA Lobos Transformed -- Converting area using st_area
+
+sub_transform <- st_transform(substrate, crs = 32610)  
+
+# Calculate the area in square meters
+sub_transform$sub_area_m2 <- st_area(sub_transform)
+
+# Convert to square kilometers
+sub_transform$sub_area_m2 <- sub_transform$sub_area_m2 / 1e6
+
+# Match CRS
+mpa_transform <- st_transform(mpa, crs = st_crs(sub_transform))
+
+# Join
+mpa_lobos_transformed <- st_intersection(sub_transform, mpa_transform) 
 ```
 
 ```{r}
+# Find area using hectare conversion
 mpa_lobos <- mpa_lobos %>% mutate(area_km_mpa = hectares / 100)
-```
 
-```{r}
 # Find percentage of each substrate in the MPA
 mpa_lobos <- mpa_lobos %>%
-  mutate(pct_sub = (area_km_sub / area_km_mpa) * 100) %>%  # Calculate percentage
-    filter(area_km_sub <= area_km_mpa)
+  mutate(pct_sub = (area_km_sub / area_km_mpa) * 100)  # Calculate percentage
+
+
+mpa_lobos <- mpa_lobos %>% mutate(area_km_mpa = hectares / 100)
 ```
 
 ```{r}
