@@ -1,0 +1,99 @@
+---
+title: "substrate_lobos"
+format: html
+editor: visual
+---
+
+# Setup
+
+```{r}
+# Load libraries
+
+# Data wrangling
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(here)
+# Mapping
+library(stars)
+library(terra)
+library(tmap)
+library(stars)
+library(sf)
+```
+
+```{r}
+# Read in substrate data
+substrate <- readRDS("substrate.rds") %>%
+  mutate(area_km_sub = area_ha / 100)  # Convert hectares to square km
+```
+
+```{r}
+# Read in MPA boundaries
+mpa <- st_read('data/MPA_boundaries') %>%
+  clean_names() %>%
+  filter(shortname == "Point Lobos")
+```
+
+```{r}
+colnames(substrate)
+```
+
+```{r}
+# Check CRS of both data sets
+st_crs(substrate)== st_crs(mpa)
+
+# Match CRS
+mpa <- st_transform(mpa, crs = st_crs(substrate))
+
+mpa_lobos <- st_intersection(substrate, mpa) 
+```
+
+```{r}
+# # Check CRS of both data sets
+# st_crs(substrate)== st_crs(mpa)
+# 
+# # Match CRS
+# mpa <- st_transform(mpa, crs = st_crs(substrate))
+# 
+# # Perform spatial join: Keep MPA columns and match substrate data
+# mpa_lobos <- st_join(mpa, substrate)
+```
+
+```{r}
+mpa_lobos <- mpa_lobos %>% mutate(area_km_mpa = hectares / 100)
+```
+
+```{r}
+# Find percentage of each substrate in the MPA
+mpa_lobos <- mpa_lobos %>%
+  mutate(pct_sub = (area_km_sub / area_km_mpa) * 100) %>%  # Calculate percentage
+    filter(area_km_sub <= area_km_mpa)
+```
+
+```{r}
+# Find percent substrate
+mpa_group <- mpa_lobos %>%
+  group_by(cmecs_sc_name) %>%
+  summarise(
+    sum_sb = sum(area_km_sub, na.rm = TRUE),  
+    sum_mpa = first(area_km_mpa)  # Ensures only one value per group
+  ) %>%
+  mutate(pct_substrate = (sum_sb / sum_mpa) * 100)
+
+# Visualize results
+ggplot(mpa_group, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name)) +
+  geom_col() +
+  labs(title = "Substrate type by Area(km2) in Point Lobos SMR",
+       x = "Substrate Group",
+       y = "Percentage") +
+  geom_text(aes(label = round(pct_substrate, 2), hjust = 0.5, vjust = 0.01)) +
+  theme_bw() +
+  scale_fill_manual(values = c('#C4A9C2','#A5CEA4' )) +
+  theme(legend.position = 'none')
+```
+
+```{r}
+plot(st_geometry(mpa))
+plot(st_geometry(substrate))
+```
