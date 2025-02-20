@@ -106,3 +106,23 @@ ggplot(mpa_group, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name
 plot(st_geometry(mpa))
 plot(st_geometry(substrate))
 ```
+
+```{r}
+colnames(substrate)
+```
+
+```{r}
+print(head(substrate$area_km_sub))
+print(head(substrate$shape_area))
+```
+
+```{r}
+substrate_conversion <- substrate %>%
+  mutate(area_conversion = shape_area / 1000000)
+
+print(head(substrate_conversion$area_conversion))
+```
+
+Shape area and convert shape area to km2 by divide by 1 mill and see
+
+to m2
