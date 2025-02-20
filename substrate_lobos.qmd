@@ -1,7 +1,11 @@
 ---
-title: "substrate_lobos"
-format: html
-editor: visual
+title: "Substrate on Point Lobos"
+subtitle: "Validating Substrate Area"
+toc: true
+editor_options: 
+execute: 
+  warning: false
+  message: false
 ---
 
 # Setup
@@ -14,6 +18,7 @@ library(tidyverse)
 library(janitor)
 library(dplyr)
 library(here)
+library(glue)
 
 # Mapping
 library(stars)
@@ -23,77 +28,87 @@ library(stars)
 library(sf)
 ```
 
+## Read in Data
+
 ```{r}
 # Read in substrate data
 substrate <- readRDS("substrate.rds") %>%
-  mutate(area_km_sub = area_ha / 100)  # Convert hectares to square km
+  # Calculate area in m2
+  mutate(area_m2_sub = area_ha * 10000)  # Convert hectares to m2
 ```
 
 ```{r}
 # Read in MPA boundaries
 mpa <- st_read('data/MPA_boundaries') %>%
   clean_names() %>%
+  
+  # Filter to both SMR and SMCA
   filter(shortname == "Point Lobos")
 ```
 
 ## Join substrate and MPA data
 
 ```{r}
-# Original MPA lobos - Area converted using Hectares
-
 # Check CRS of both data sets
 st_crs(substrate)== st_crs(mpa)
 
 # Match CRS
 mpa <- st_transform(mpa, crs = st_crs(substrate))
 
-mpa_lobos <- st_intersection(substrate, mpa) 
+# Join datasets
+mpa_lobos <- st_intersection(substrate, mpa) %>%
+  
+  # Find area using hectare conversion to m2
+  mutate(area_m2_mpa = hectares * 10000)
 ```
 
 ```{r}
-# MPA Lobos Transformed -- Converting area using st_area
-
-sub_transform <- st_transform(substrate, crs = 32610)  
-
-# Calculate the area in square meters
-sub_transform$sub_area_m2 <- st_area(sub_transform)
-
-# Convert to square kilometers
-sub_transform$sub_area_m2 <- sub_transform$sub_area_m2 / 1e6
-
-# Match CRS
-mpa_transform <- st_transform(mpa, crs = st_crs(sub_transform))
-
-# Join
-mpa_lobos_transformed <- st_intersection(sub_transform, mpa_transform) 
-```
-
-```{r}
-# Find area using hectare conversion
-mpa_lobos <- mpa_lobos %>% mutate(area_km_mpa = hectares / 100)
-
-# Find percentage of each substrate in the MPA
-mpa_lobos <- mpa_lobos %>%
-  mutate(pct_sub = (area_km_sub / area_km_mpa) * 100)  # Calculate percentage
-
-
-mpa_lobos <- mpa_lobos %>% mutate(area_km_mpa = hectares / 100)
-```
-
-```{r}
-# Find percent substrate
-mpa_group <- mpa_lobos %>%
-  group_by(cmecs_sc_name) %>%
+# Find the percent substrate 
+mpa_area <- mpa_lobos %>%
+  group_by(type, cmecs_sc_name) %>%  # Group by MPA type, substrate group
   summarise(
-    sum_sb = sum(area_km_sub, na.rm = TRUE),  
-    sum_mpa = first(area_km_mpa)  # Ensures only one value per group
+    substrate_area_m2 = sum(area_m2_sub, na.rm = TRUE),  
+    total_mpa_area_m2 = first(area_m2_mpa)  
   ) %>%
-  mutate(pct_substrate = (sum_sb / sum_mpa) * 100)
+  mutate(pct_substrate = (substrate_area_m2 / total_mpa_area_m2) * 100)  
+
+# Check area (in hectares)
+print(glue("Total substrate area from calculations: {sum(mpa_area$substrate_area_m2, na.rm = TRUE) / 10000} hectares"))
+
+print(glue("Total substrate area from MPA: {sum(mpa_lobos$area_ha)}"))
+```
+
+## Errors here!
+
+-   So, if we sum all the area of substrate in point lobos and compare it to the area of point lobos, we have far more substrate.
+
+-   Do depth zones play a role? I fixed percentages so that they are grouped by type (SMR/SMCA) and substrate group...
+
+    ```{r}
+    # Substrate area
+    sum(mpa_lobos$area_ha)
+
+    # Area of point lobos
+    mpa$hectares
+
+    # Total point lobos area
+    sum(mpa$hectares)
+    ```
+
+```{r}
+# # Find percent substrate
+# mpa_pct <- mpa_lobos %>%
+#   group_by(cmecs_sc_name) %>% # Group by substrate group (2)
+#   summarise(
+#     sum_sb = sum(area_m2_sub, na.rm = TRUE), # Add all substrate area 
+#     sum_mpa = first(area_m2_mpa)  # Ensures only one value per group
+#   ) %>%
+#   mutate(pct_substrate = (sum_sb / sum_mpa) * 100)
 
 # Visualize results
-ggplot(mpa_group, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name)) +
+ggplot(mpa_area, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name)) +
   geom_col() +
-  labs(title = "Substrate type by Area(km2) in Point Lobos SMR",
+  labs(title = "Substrate type by Area(m2) in Point Lobos SMR+SMCA",
        x = "Substrate Group",
        y = "Percentage") +
   geom_text(aes(label = round(pct_substrate, 2), hjust = 0.5, vjust = 0.01)) +
@@ -102,27 +117,54 @@ ggplot(mpa_group, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name
   theme(legend.position = 'none')
 ```
 
+## Initial Visualization of Point Lobos and MPA
+
 ```{r}
+# Initial plots of Point Lobos and Substrate
 plot(st_geometry(mpa))
 plot(st_geometry(substrate))
 ```
 
-```{r}
-colnames(substrate)
-```
+### Determing units of shape_area column
+
+##### Calculating using st_area ------------------------------
 
 ```{r}
-print(head(substrate$area_km_sub))
+#| code-fold: true
+#| code-summary: "Show the code"
+
+# # MPA Lobos Transformed -- Converting area using st_area
+# 
+# sub_transform <- st_transform(substrate, crs = 32610)  
+# 
+# # Calculate the area in square meters
+# sub_transform$sub_area_m2 <- st_area(sub_transform)
+# 
+# # Convert to square kilometers
+# sub_transform$sub_area_m2 <- sub_transform$sub_area_m2 / 1e6
+# 
+# # Match CRS
+# mpa_transform <- st_transform(mpa, crs = st_crs(sub_transform))
+# 
+# # Join
+# mpa_lobos_transformed <- st_intersection(sub_transform, mpa_transform) 
+```
+
+------------------------------------------------------------------------
+
+```{r}
+# View initial columns
+print(head(substrate$area_m2_sub)) # Original hectare conversion, note this is in m2 and not km2
 print(head(substrate$shape_area))
 ```
 
 ```{r}
+# Make a new df to test out conversions
 substrate_conversion <- substrate %>%
   mutate(area_conversion = shape_area / 1000000)
 
+# Conversion of shape_area to km2
 print(head(substrate_conversion$area_conversion))
+
+# Values are still off...let's try converting hectares to m2 (per Maddy's check online)
 ```
-
-Shape area and convert shape area to km2 by divide by 1 mill and see
-
-to m2
