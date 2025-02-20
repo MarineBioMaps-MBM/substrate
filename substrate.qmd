@@ -25,7 +25,22 @@ library(stars)
 library(sf)
 ```
 
-### Read and clean substrate data
+## IGNORE -- Initial cleaning
+
+```{r}
+# Path to the geodatabase folder
+gdb_path <- here('data/PMEP_biotic.gdb')
+
+# List all layers (tables and feature classes) in the geodatabase
+layers <- st_layers(gdb_path)
+
+data <- st_read(gdb_path, layer = "West_Coast_USA_Nearshore_CMECS_Substrate_Habitat_V2"
+) %>%
+# Filter to California
+   filter(State == 'CA') %>%
+# Change colnames to lower snake case
+  janitor::clean_names()
+```
 
 ```{r}
 # Path to the geodatabase folder
@@ -63,8 +78,8 @@ substrate <- data %>%
     noaa_hapc = noaa_hapc,
     estuary_name = estuary_name,
     area_ha = area_ha,
-    shape_length = shape_length,
-    shape_area = shape_area
+    shape_length_mm = shape_length,
+    shape_area_mm = shape_area
   ) %>% 
   mutate(area_km_sub = area_ha / 100) %>%  # Convert hectares to square km
   select(-area_ha)  # Remove the original area_ha column
@@ -111,27 +126,17 @@ mpa_group <- mpa_lobos %>%
   group_by(group) %>%
   summarise(
     sum_sb = sum(area_km_sub, na.rm = TRUE),  
-    sum_mpa = sum(area_km_mpa, na.rm = TRUE)  
+    sum_mpa = unique(area_km_mpa, na.rm = TRUE)  
   ) %>%
   mutate(pct_substrate = (sum_sb / sum_mpa) * 100)  
 
 # Visualize results
-ggplot(mpa_group, aes(x = group, y = pct_substrate)) +
+ggplot(mpa_group, aes(x = group, y = pct_substrate, fill = group)) +
   geom_col() +
   labs(title = "Substrate type by Area(km2) in Point Lobos SMR",
        x = "Substrate Group",
        y = "Percentage") +
-  theme_bw() +
-  geom_text(aes(label = round(pct_substrate, 2), hjust = 0.5, vjust = 0.01)) 
-```
-
-```{r}
-# Visualize results
-ggplot(mpa_lobos, aes(x = group, y = pct_sub, fill = group)) +
-  geom_col() +
-  labs(title = "Substrate type by Area(km2) in Point Lobos SMR",
-       x = "Substrate Group",
-       y = "Percentage") +
+  geom_text(aes(label = round(pct_substrate, 2), hjust = 0.5, vjust = 0.01)) +
   theme_bw() +
   scale_fill_manual(values = c('#C4A9C2','#A5CEA4' )) +
   theme(legend.position = 'none')

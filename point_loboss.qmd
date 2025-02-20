@@ -1,0 +1,130 @@
+---
+title: "point_lobos"
+format: html
+editor: visual
+eval: true
+warning: false
+message: false
+---
+
+## Load libraries
+
+```{r}
+# Load libraries
+
+# Data wrangling
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(here)
+# Mapping
+library(stars)
+library(terra)
+library(tmap)
+library(stars)
+library(sf)
+library(treemapify)
+library(patchwork)
+```
+
+## Read in substrate, biota and MPA data
+
+```{r}
+# Read in substrate and biotic data
+substrate <- readRDS("substrate.rds")
+biota <- readRDS('Biota.rds')
+```
+
+```{r}
+# Read in MPA boundaries
+mpa <- st_read('data/MPA_boundaries') %>%
+  clean_names() %>%
+  filter(name == "Point Lobos SMR") %>%
+  # Select relevant columns
+  select(-c("objectid", "ccr", "area_sq_mi", "study_regi", "fullname", "ccr_int", "shortname","acres", "shape_are", "shape_len")) %>%
+  mutate(area_km_mpa = hectares / 100) %>%  # Convert hectares to square km
+  select(-hectares)
+```
+
+## Join all three datasets
+
+```{r}
+# Convert the shape_area column in km
+
+# Reproject to a UTM Zone (Example: UTM Zone 10N for the U.S. West Coast)
+biota_transform <- st_transform(biota, crs = 32610)  # Change EPSG based on your region
+
+# Calculate the area in square meters
+biota_transform$Biota_Area_m2 <- st_area(biota_transform)
+
+# Convert to square kilometers
+biota_transform$Biota_Area_km2 <- biota_transform$Biota_Area_m2 / 1e6
+```
+
+```{r}
+# Check CRS of both data sets
+st_crs(substrate)== st_crs(mpa)
+st_crs(biota_transform)== st_crs(mpa)
+
+# Match CRS
+mpa <- st_transform(mpa, crs = st_crs(substrate))
+biota_transform <- st_transform(biota_transform, st_crs(mpa))
+
+# Perform spatial join
+mpa_lobos <- st_join(mpa, substrate, join = st_intersects, left = TRUE)
+mpa_lobos <- st_join(mpa_lobos, biota_transform, join = st_intersects, left = TRUE)
+
+```
+
+## Create a new df with percentages
+
+```{r}
+mpa_group <- mpa_lobos %>%
+  mutate(
+    Biota_Area_km2 = as.numeric(Biota_Area_km2),
+    area_km_mpa = as.numeric(area_km_mpa),
+    area_km_sub = as.numeric(area_km_sub),
+    pct_biota = (Biota_Area_km2 / area_km_mpa) * 100,
+    pct_sub = (area_km_sub / area_km_mpa) * 100
+  ) %>%
+  filter(Biota_Area_km2 <= area_km_mpa, area_km_sub <= area_km_mpa) %>%
+  group_by(group, CMECS_BC_Category) %>%
+  summarise(
+    sum_biota = sum(Biota_Area_km2, na.rm = TRUE),
+    sum_sb = sum(area_km_sub, na.rm = TRUE),
+    sum_mpa = sum(area_km_mpa, na.rm = TRUE),
+    pct_mpa_biota = (sum_biota / sum_mpa) * 100,
+    pct_mpa_substrate = (sum_sb / sum_mpa) * 100
+  )
+
+```
+
+## Biota Data -- Initial Statistics
+
+```{r}
+# Visualize results
+ggplot(mpa_group, aes(x = CMECS_BC_Category, y = pct_mpa_biota, fill = CMECS_BC_Category)) +
+  geom_col() +
+  labs(title = "Marine Biota Type by Area(km2) in Point Lobos SMR",
+       x = "Biota Category",
+       y = "Percentage") +
+  theme_bw() +
+  geom_text(aes(label = round(pct_mpa_biota, 2), hjust = 0.5, vjust = 0.01)) +
+  scale_fill_manual(values = c('#C4A9C2','#A5CEA4' )) +
+  theme(legend.position = 'none')
+```
+
+## Substrate Data -- Initial Statistics
+
+```{r}
+# Visualize results
+ggplot(mpa_group, aes(x = group, y = pct_mpa_substrate, fill = group)) +
+  geom_col() +
+  labs(title = "Marine Substrate Type by Area(km2) in Point Lobos SMR",
+       x = "Biota Category",
+       y = "Percentage") +
+  theme_bw() +
+  geom_text(aes(label = round(pct_mpa_substrate, 2), hjust = 0.5, vjust = 0.01)) +
+  scale_fill_manual(values = c('#C4A9C2','#A5CEA4' )) +
+  theme(legend.position = 'none')
+```
