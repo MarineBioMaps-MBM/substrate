@@ -26,6 +26,7 @@ library(terra)
 library(tmap)
 library(stars)
 library(sf)
+library(units)
 ```
 
 ## Read in Data
@@ -56,10 +57,14 @@ st_crs(substrate)== st_crs(mpa)
 mpa <- st_transform(mpa, crs = st_crs(substrate))
 
 # Join datasets
-mpa_lobos <- st_intersection(substrate, mpa) %>%
+mpa_lobos <- st_intersection(mpa, substrate) %>%
   
   # Find area using hectare conversion to m2
   mutate(area_m2_mpa = hectares * 10000)
+```
+
+```{r}
+mpa_lobos$area_m2 <- st_area(mpa_lobos) # Area of each substrate type polygon
 ```
 
 ```{r}
@@ -67,7 +72,7 @@ mpa_lobos <- st_intersection(substrate, mpa) %>%
 mpa_area <- mpa_lobos %>%
   group_by(type, cmecs_sc_name) %>%  # Group by MPA type, substrate group
   summarise(
-    substrate_area_m2 = sum(area_m2_sub, na.rm = TRUE),  
+    substrate_area_m2 = sum(area_m2, na.rm = TRUE),  
     total_mpa_area_m2 = first(area_m2_mpa)  
   ) %>%
   mutate(pct_substrate = (substrate_area_m2 / total_mpa_area_m2) * 100)  
@@ -114,15 +119,15 @@ ggplot(mpa_area, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name)
   geom_text(aes(label = round(pct_substrate, 2), hjust = 0.5, vjust = 0.01)) +
   theme_bw() +
   scale_fill_manual(values = c('#C4A9C2','#A5CEA4' )) +
-  theme(legend.position = 'none')
+  theme(legend.position = 'none') + facet_wrap(~type)
 ```
 
 ## Initial Visualization of Point Lobos and MPA
 
 ```{r}
 # Initial plots of Point Lobos and Substrate
-plot(st_geometry(mpa))
-plot(st_geometry(substrate))
+# plot(st_geometry(mpa))
+# plot(st_geometry(substrate))
 ```
 
 ### Determing units of shape_area column
