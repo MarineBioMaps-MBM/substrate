@@ -1,0 +1,98 @@
+---
+title: "lobos_study_substrate"
+format: html
+editor: visual
+---
+
+## Setup: Load libraries and data
+
+```{r, message=FALSE, warnings=FALSE}
+# Load libraries
+
+# Data wrangling
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(here)
+
+# Mapping
+library(stars)
+library(terra)
+library(tmap)
+library(stars)
+library(sf)
+library(units)
+
+library(knitr)
+```
+
+```{r, message=FALSE, warnings=FALSE}
+# Read in substrate data
+substrate <- readRDS("substrate.rds")
+
+# Read in MPA boundaries
+mpa <- st_read('data/MPA_boundaries') %>%
+  clean_names() %>%
+  
+  # Filter to both SMR and SMCA
+  filter(shortname == "Point Lobos") %>%
+  
+  # Convert area to m2
+  mutate(area_m2_mpa = hectares * 10000)
+```
+
+## Join substrate and MPA data
+
+```{r, warnings=FALSE, sup}
+# Match CRS
+mpa <- st_transform(mpa, crs = st_crs(substrate))
+
+# Join datasets
+mpa_lobos <- st_intersection(mpa, substrate) 
+```
+
+## Find percent substrate
+
+```{r}
+# Calculate true area of substrate in the MPA 
+mpa_lobos$area_m2 <- st_area(mpa_lobos) # Area of each substrate type polygon
+```
+
+```{r, message=FALSE}
+# Find the percent substrate 
+mpa_area <- mpa_lobos %>%
+  
+   # Group by MPA type, substrate group
+  group_by(type, cmecs_sc_name) %>% 
+  
+  summarise(
+    substrate_area_m2 = sum(area_m2, na.rm = TRUE),  
+    total_mpa_area_m2 = first(area_m2_mpa) # Area of MPA type were previously calculated (from the original data), taking the first area (by SMR/SMCA)
+  ) %>%
+  
+  # Calculate percentage
+  mutate(pct_substrate = (substrate_area_m2 / total_mpa_area_m2) * 100) 
+```
+
+## Visualize results
+
+```{r}
+# Visualize results
+ggplot(mpa_area, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name)) +
+  geom_col() +
+  labs(title = "Substrate type Point Lobos SMR & SMCA",
+       x = NULL,
+       y = "Area Percentage") +
+  geom_text(aes(label = round(pct_substrate, 2), hjust = 0.5, vjust = 0.01)) +
+  theme_bw() +
+  scale_fill_manual(values = c('#CEB6AD','#796655' )) +
+  theme(legend.position = 'none') + facet_wrap(~type)
+```
+
+```{r}
+print(head(mpa_area))
+```
+
+```{r}
+print(head(mpa_lobos))
+```

@@ -1,0 +1,148 @@
+---
+title: "sub_region"
+format: html
+editor: visual
+---
+
+```{r, message=FALSE, warnings=FALSE}
+# Load libraries
+
+# Data wrangling
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(here)
+
+# Mapping
+library(stars)
+library(terra)
+library(tmap)
+library(stars)
+library(sf)
+library(units)
+
+library(knitr)
+```
+
+```{r, message=FALSE, warnings=FALSE}
+# Read in substrate data
+substrate <- readRDS("substrate.rds")
+
+# Read in MPA boundaries
+mpa <- st_read('data/MPA_boundaries') %>%
+  clean_names() %>%
+  
+  # Convert area to m2
+  mutate(area_m2_mpa = hectares * 10000)
+```
+
+```{r, warnings=FALSE, sup}
+# Match CRS
+mpa <- st_transform(mpa, crs = st_crs(substrate))
+
+# Join datasets
+mpa_lobos <- st_intersection(mpa, substrate)
+```
+
+```{r}
+# Assign MPAs to bioregions -- will need to check assignments
+mpa_region <- mpa %>%
+  mutate(region = case_when(
+    name %in% c(
+      "Pyramid Point SMCA", "Point St. George Reef Offshore SMCA", "Reading Rock SMR",
+  "Samoa SMCA", "South Humboldt Bay SMRMA", "Mattole Canyon SMR", "Sea Lion Gulch SMR",
+  "Big Flat SMCA", "Ten Mile SMR", "Ten Mile Beach SMCA", "Ten Mile Estuary SMCA",
+  "Point Cabrillo SMR", "Russian Gulch SMCA", "Van Damme SMCA", "Point Arena SMR",
+  "Sea Lion Cove SMCA", "Saunders Reef SMCA", "Gerstle Cove SMR", "MacKerricher SMCA",
+  "Big River Estuary SMCA", "Navarro River Estuary SMCA", "Point Arena SMCA",
+  "Del Mar Landing SMR", "Salt Point SMCA", "South Cape Mendocino SMR",
+  "Reading Rock SMCA"
+    ) ~ "Northern California",
+
+    name %in% c(
+      "Bodega Head SMR", "Bodega Head SMCA", "Point Reyes SMCA", "Estero de Limantour SMR",
+  "Drakes Estero SMCA", "Point Reyes SMR", "Duxbury Reef SMCA", "Pillar Point SMCA",
+  "Montara SMR", "North Farallon Islands SMR", "Greyhound Rock SMCA", "Año Nuevo SMR",
+  "Edward F. Ricketts SMCA", "Lovers Point - Julia Platt SMR", "Pacific Grove Marine Gardens SMCA",
+  "Asilomar SMR", "Carmel Bay SMCA", "Point Lobos SMR", "Point Lobos SMCA", "Point Sur SMR",
+  "Point Sur SMCA", "Big Creek SMCA", "Big Creek SMR", "Piedras Blancas SMR", "Piedras Blancas SMCA",
+  "Cambria SMCA", "White Rock SMCA", "Point Buchon SMCA", "Point Buchon SMR",
+  "Vandenberg SMR", "Naples SMCA", "Campus Point SMCA (No-Take)", "Elkhorn Slough SMR",
+  "Elkhorn Slough SMCA", "Morro Bay SMR", "Morro Bay SMRMA", "Moro Cojo Slough SMR"
+    ) ~ "Central California",
+
+    name %in% c(
+      "Goleta Slough SMCA (No-Take)", "Judith Rock SMR", "Richardson Rock SMR",
+  "Harris Point SMR", "Carrington Point SMR", "Skunk Point SMR", "South Point SMR",
+  "Painted Cave SMCA", "Gull Island SMR", "Scorpion SMR", "Anacapa Island SMR",
+  "Anacapa Island SMCA", "Blue Cavern Onshore SMCA (No-Take)", "Blue Cavern Offshore SMCA",
+  "Long Point SMR", "Casino Point SMCA (No-Take)", "Lover's Cove SMCA", "Farnsworth Onshore SMCA",
+  "Farnsworth Offshore SMCA", "Point Dume SMCA", "Point Dume SMR", "Abalone Cove SMCA",
+  "Point Vicente SMCA (No-Take)", "Bolsa Bay SMCA", "Bolsa Chica Basin SMCA (No-Take)",
+  "Upper Newport Bay SMCA", "Laguna Beach SMCA (No-Take)", "Laguna Beach SMR",
+  "Crystal Cove SMCA", "Dana Point SMCA", "Cat Harbor SMCA", "Swami's SMCA",
+  "San Elijo Lagoon SMCA (No-Take)", "San Dieguito Lagoon SMCA", "San Diego-Scripps Coastal SMCA",
+  "Matlahuayl SMR", "South La Jolla SMR", "South La Jolla SMCA", "Famosa Slough SMCA (No-Take)",
+  "Cabrillo SMR", "Tijuana River Mouth SMCA"
+    ) ~ "Southern California",
+
+    TRUE ~ "Uncategorized"
+  ))
+
+
+```
+
+```{r}
+# Assign each region to a new variable to help with computation time
+mpa_north <-  mpa %>%
+  filter(name %in% c(
+  "Pyramid Point SMCA", "Point St. George Reef Offshore SMCA", "Reading Rock SMR",
+  "Samoa SMCA", "South Humboldt Bay SMRMA", "Mattole Canyon SMR", "Sea Lion Gulch SMR",
+  "Big Flat SMCA", "Ten Mile SMR", "Ten Mile Beach SMCA", "Ten Mile Estuary SMCA",
+  "Point Cabrillo SMR", "Russian Gulch SMCA", "Van Damme SMCA", "Point Arena SMR",
+  "Sea Lion Cove SMCA", "Saunders Reef SMCA", "Gerstle Cove SMR", "MacKerricher SMCA",
+  "Big River Estuary SMCA", "Navarro River Estuary SMCA", "Point Arena SMCA",
+  "Del Mar Landing SMR", "Salt Point SMCA", "South Cape Mendocino SMR",
+  "Reading Rock SMCA"
+))
+
+# Central California MPAs
+mpa_central <-  mpa %>%
+  filter(name %in% c(
+  "Bodega Head SMR", "Bodega Head SMCA", "Point Reyes SMCA", "Estero de Limantour SMR",
+  "Drakes Estero SMCA", "Point Reyes SMR", "Duxbury Reef SMCA", "Pillar Point SMCA",
+  "Montara SMR", "North Farallon Islands SMR", "Greyhound Rock SMCA", "Año Nuevo SMR",
+  "Edward F. Ricketts SMCA", "Lovers Point - Julia Platt SMR", "Pacific Grove Marine Gardens SMCA",
+  "Asilomar SMR", "Carmel Bay SMCA", "Point Lobos SMR", "Point Lobos SMCA", "Point Sur SMR",
+  "Point Sur SMCA", "Big Creek SMCA", "Big Creek SMR", "Piedras Blancas SMR", "Piedras Blancas SMCA",
+  "Cambria SMCA", "White Rock SMCA", "Point Buchon SMCA", "Point Buchon SMR",
+  "Vandenberg SMR", "Naples SMCA", "Campus Point SMCA (No-Take)", "Elkhorn Slough SMR",
+  "Elkhorn Slough SMCA", "Morro Bay SMR", "Morro Bay SMRMA", "Moro Cojo Slough SMR"
+))
+
+# Southern California MPAs
+mpa_south <-  mpa %>%
+  filter(name %in% c(
+  "Goleta Slough SMCA (No-Take)", "Judith Rock SMR", "Richardson Rock SMR",
+  "Harris Point SMR", "Carrington Point SMR", "Skunk Point SMR", "South Point SMR",
+  "Painted Cave SMCA", "Gull Island SMR", "Scorpion SMR", "Anacapa Island SMR",
+  "Anacapa Island SMCA", "Blue Cavern Onshore SMCA (No-Take)", "Blue Cavern Offshore SMCA",
+  "Long Point SMR", "Casino Point SMCA (No-Take)", "Lover's Cove SMCA", "Farnsworth Onshore SMCA",
+  "Farnsworth Offshore SMCA", "Point Dume SMCA", "Point Dume SMR", "Abalone Cove SMCA",
+  "Point Vicente SMCA (No-Take)", "Bolsa Bay SMCA", "Bolsa Chica Basin SMCA (No-Take)",
+  "Upper Newport Bay SMCA", "Laguna Beach SMCA (No-Take)", "Laguna Beach SMR",
+  "Crystal Cove SMCA", "Dana Point SMCA", "Cat Harbor SMCA", "Swami's SMCA",
+  "San Elijo Lagoon SMCA (No-Take)", "San Dieguito Lagoon SMCA", "San Diego-Scripps Coastal SMCA",
+  "Matlahuayl SMR", "South La Jolla SMR", "South La Jolla SMCA", "Famosa Slough SMCA (No-Take)",
+  "Cabrillo SMR", "Tijuana River Mouth SMCA"
+))
+
+```
+
+```{r, warnings=FALSE}
+# Match CRS
+mpa_north <- st_transform(mpa_north, crs = st_crs(substrate))
+
+# Join datasets
+mpa_north_substrate <- st_intersection(mpa_north, substrate)
+```

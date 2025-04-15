@@ -19,14 +19,19 @@ library(janitor)
 library(dplyr)
 library(here)
 library(glue)
+library(gtable)
 
 # Mapping
 library(stars)
+
 library(terra)
 library(tmap)
 library(stars)
 library(sf)
 library(units)
+
+library(knitr)
+library(kableExtra)
 ```
 
 ## Read in Data
@@ -44,7 +49,8 @@ mpa <- st_read('data/MPA_boundaries') %>%
   clean_names() %>%
   
   # Filter to both SMR and SMCA
-  filter(shortname == "Point Lobos")
+  filter(shortname == "Point Lobos") %>%
+  mutate(area_m2_mpa = hectares * 10000)
 ```
 
 ## Join substrate and MPA data
@@ -79,11 +85,201 @@ mpa_area <- mpa_lobos %>%
 # Visualize results
 ggplot(mpa_area, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name)) +
   geom_col() +
-  labs(title = "Substrate type by Area(m2) in Point Lobos SMR+SMCA",
-       x = "Substrate Group",
-       y = "Percentage") +
+  labs(title = "Substrate type Point Lobos SMR & SMCA",
+       x = NULL,
+       y = "Area Percentage") +
   geom_text(aes(label = round(pct_substrate, 2), hjust = 0.5, vjust = 0.01)) +
   theme_bw() +
-  scale_fill_manual(values = c('#C4A9C2','#A5CEA4' )) +
+  scale_fill_manual(values = c('#CEB6AD','#796655' )) +
   theme(legend.position = 'none') + facet_wrap(~type)
+```
+
+```{r}
+tm_shape(mpa_lobos) +
+  tm_polygons(col = 'cmecs_sc_category',
+              palette = c('#CEB6AD','#9D826B'), 
+              title = 'Substrate Type') +
+  tm_layout(legend.position = c("left", "bottom"))
+  
+```
+
+```{r}
+
+# mpa_lobos |>
+#   gt() |> 
+#   tab_header(
+#     title = md("Depth Zones of **Point Lobos SMR and SMCA**"),
+#     subtitle = "depth zones as percentages of total protected area"
+#   ) |> 
+#   tab_style(
+#     style = cell_text(size = px(12)),
+#     locations = cells_column_labels()
+#   ) |>
+#   tab_style(
+#     style = cell_text(size = px(10)), # Adjust size for source note
+#     locations = cells_source_notes()
+#   ) |>
+#   fmt_number(
+#     columns = Percentage,  
+#     decimals = 2,
+#     suffix = "%"
+#   ) |>
+#   text_transform(
+#     locations = cells_body(columns = Percentage),
+#     fn = function(x) paste0(x, "%")  # Manually appends the % sign
+#   ) |>
+#   tab_style(
+#     style = cell_text(color = "#002f41"),  # Change text color (modify as needed)
+#     locations = cells_body(columns = Percentage)
+#   ) |> 
+#   tab_source_note(md("*Depth Zones classified by the Pacific Marine and Estuarine Partnership (PMEP)*")) 
+```
+
+```{r}
+# Make pie chart using facets
+ggplot(mpa_area_table, aes(x = "", y = Percentage, fill = Type)) +
+  geom_col(width = 1, color = "white") +  
+  coord_polar(theta = "y", start = 0) +  # Convert to pie chart
+
+  
+  labs(title = "Substrate Type in Point Lobos",
+       x = NULL,
+       y = NULL,
+       fill = "Substrate Type") +
+  
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")), 
+            position = position_stack(vjust = 0.5),
+            color = "black",
+            size = 5) +
+  
+  theme_minimal() +
+  
+  scale_fill_manual(values = c('#CEB6AD','#796655')) + 
+  
+  theme(axis.text = element_blank(),  # Remove axis labels
+        axis.ticks = element_blank(),
+        panel.grid = element_blank(),
+        legend.position = "bottom") 
+
+```
+
+```{r}
+# SMR Pie Chart
+p2 <- mpa_area %>%
+  filter(type == "SMR") %>%
+  ggplot(aes(x = "", y = pct_substrate, fill = cmecs_sc_name)) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  
+  labs(title = "Substrate Type in Point Lobos SMR", 
+       x = NULL, 
+       y = NULL, 
+       fill = "Substrate Type") +
+  
+  geom_text(aes(label = paste0(round(pct_substrate, 1), "%")),
+            position = position_stack(vjust = 0.5),
+            color = "white", size = 5) +
+  
+  theme_minimal() +
+  
+  scale_fill_manual(values = c('#CEB6AD','#796655')) + 
+  
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid = element_blank(),
+        legend.position = "bottom")
+
+# SMCA Pie Chart
+p3 <- mpa_area %>%
+  filter(type == "SMCA") %>%
+  ggplot(aes(x = "", y = pct_substrate, fill = cmecs_sc_name)) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y", start = 0) +
+  
+  labs(title = "Substrate Type in Point Lobos SMCA", 
+       x = NULL, 
+       y = NULL,
+       fill = "Substrate Type") +
+  
+  geom_text(aes(label = paste0(round(pct_substrate, 1), "%")),
+            position = position_stack(vjust = 0.85),
+            color = "white", size = 5) +
+  
+  theme_minimal() +
+  
+  scale_fill_manual(values = c('#CEB6AD','#796655')) + 
+  
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid = element_blank(),
+        legend.position = "bottom")
+```
+
+```{r}
+# Save all images
+ggsave("SMCASMR_pie.png", p1, width = 6, height = 6, bg = "transparent")
+ggsave("SMR_pie.png", p2, width = 6, height = 6, bg = "transparent")
+ggsave("SMCA_pie.png", p3, width = 6, height = 6, bg = "transparent")
+```
+
+```{r}
+# Convert columns to numeric
+mpa_area_table <- mpa_area %>%
+  mutate(
+    substrate_area_m2 = as.numeric(gsub(" \\[m\\^2\\]", "", substrate_area_m2)),  # Remove units and convert to numeric
+    total_mpa_area_m2 = as.numeric(total_mpa_area_m2)  # Ensure total area is numeric
+  ) %>%
+  group_by(cmecs_sc_name) %>%  # Group by substrate type
+  summarise(
+    total_substrate_area = sum(substrate_area_m2, na.rm = TRUE),
+    total_area = sum(total_mpa_area_m2, na.rm = TRUE)
+  ) %>%
+  mutate(
+    pct_substrate = (total_substrate_area / total_area) * 100  # Calculate percentage of substrate
+  ) %>%
+  select(Substrate_type = cmecs_sc_name, Percent_substrate = pct_substrate)  # Select and rename columns
+
+# View the resulting table
+mpa_area_table <- mpa_area_table %>%
+  st_drop_geometry()
+
+# Format the table using kable
+mpa_area_table |> 
+  mutate(Percent_substrate = sprintf("%.2f%%", Percent_substrate)) |>  # Format percentage
+  kable(format = "html", align = "c") |>
+  kable_styling(full_width = FALSE) |>
+  column_spec(2, color = "#002f41") |>  # Change text color for the percentage column
+  add_header_above(c("Substrate Areas in Point Lobos SMR and SMCA" = 2)) |>
+  footnote(general = "Substrate areas classified by the Pacific Marine and Estuarine Partnership (PMEP)")
+
+
+
+```
+
+```{r}
+# Convert necessary columns to numeric and clean up the data
+mpa_area_table <- mpa_area %>%
+  mutate(
+    substrate_area_m2 = as.numeric(gsub(" \\[m\\^2\\]", "", substrate_area_m2)),  # Remove units and convert to numeric
+    total_mpa_area_m2 = as.numeric(total_mpa_area_m2)  # Ensure total area is numeric
+  ) %>%
+  group_by(cmecs_sc_name) %>%  # Group by substrate type
+  summarise(
+    total_substrate_area = sum(substrate_area_m2, na.rm = TRUE),
+    total_area = sum(total_mpa_area_m2, na.rm = TRUE)
+  ) %>%
+  mutate(
+    pct_substrate = (total_substrate_area / total_area) * 100  # Calculate percentage of substrate
+  ) %>%
+  select(Type = cmecs_sc_name, Percentage = pct_substrate)  
+
+# Create the table with kable format
+mpa_area_table %>%
+  st_drop_geometry() %>% 
+  mutate(Percentage = sprintf("%.2f%%", Percentage)) |>  
+  kable(format = "html", align = "l") |>  # Left-align columns
+  kable_styling(full_width = FALSE, position = "center", font_size = 10) |>  
+  column_spec(2, color = "#002f41") |>  # Change text color for percentages
+  add_header_above(c("Substrate Areas in Point Lobos SMR and SMCA" = 2), bold = TRUE) |>
+  footnote(general = "Substrate areas classified by the\nPacific Marine and Estuarine Partnership (PMEP)")
 ```
