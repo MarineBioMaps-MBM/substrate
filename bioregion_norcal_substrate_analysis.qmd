@@ -1,9 +1,8 @@
 ---
-title: "sub_region"
+title: "bioregion_norcal_substrate_analysis"
 format: html
 editor: visual
 ---
-
 ```{r, message=FALSE, warnings=FALSE}
 # Load libraries
 
@@ -45,27 +44,9 @@ mpa <- st_read('data/MPA_boundaries') %>%
 # Filter to Northern CA
 north_sub <- substrate |>
   filter(pmep_region == "Pacific Northwest")
-
-# Filter to Central CA
-central_sub <- substrate |>
-  filter(pmep_region == "Central California")
-
-# Filter to Southern CA
-south_sub <- substrate |>
-  filter(pmep_region == "Southern California Bight")
 ```
 
 ```{r, warnings=FALSE}
 # Join Northern CA to substrate
 north_sub_mpa <- st_intersection(mpa, north_sub)
-```
-
-```{r, warnings=FALSE}
-# Join Central CA to substrate
-central_sub_mpa <- st_intersection(mpa, central_sub)
-```
-
-```{r, warnings=FALSE}
-# Join Southern CA to substrate
-south_sub_mpa <- st_intersection(mpa, south_sub)
 ```

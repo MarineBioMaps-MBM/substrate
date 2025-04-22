@@ -1,0 +1,53 @@
+---
+title: "bioregion_socal_substrate_analysis"
+format: html
+editor: visual
+---
+
+```{r, message=FALSE, warnings=FALSE}
+# Load libraries
+
+# Data wrangling
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(here)
+
+# Mapping
+library(stars)
+library(terra)
+library(tmap)
+library(stars)
+library(sf)
+library(units)
+
+library(knitr)
+```
+
+```{r, message=FALSE, warnings=FALSE}
+# Read in substrate data
+substrate <- readRDS("substrate.rds")
+
+# Read in MPA boundaries
+mpa <- st_read('data/MPA_boundaries') %>%
+  clean_names() %>%
+  
+  # Convert area to m2
+  mutate(area_m2_mpa = hectares * 10000) %>%
+  
+  # Transform and make valid geometries
+  
+  st_transform(mpa, crs = st_crs(substrate)) %>% 
+  st_make_valid()
+```
+
+```{r}
+# Filter to Southern CA
+south_sub <- substrate |>
+  filter(pmep_region == "Southern California Bight")
+```
+
+```{r, warnings=FALSE}
+# Join Southern CA to substrate
+south_sub_mpa <- st_intersection(mpa, south_sub)
+```
