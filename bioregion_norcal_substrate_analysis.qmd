@@ -50,3 +50,40 @@ north_sub <- substrate |>
 # Join Northern CA to substrate
 north_sub_mpa <- st_intersection(mpa, north_sub)
 ```
+
+```{r}
+# Drop geometry
+north_sub_mpa <- north_sub_mpa %>%
+  st_drop_geometry() %>%
+  drop_units()
+```
+
+```{r}
+# Make a summary table
+mpa_area_summary <- north_sub_mpa %>%
+  
+  group_by(name, area_m2_mpa, pmep_zone_detail, type, cmecs_sc_name) %>%
+  
+  summarise(
+    area_m2_sub = sum(area_m2_sub, na.rm = TRUE)) %>%
+  
+  ungroup() %>%
+  
+  mutate(percent_substrate = (area_m2_sub / area_m2_mpa) * 100)
+```
+
+```{r}
+# Check if any percent_substrate values are below 0 or above 100
+
+invalid_percent <- mpa_area_summary %>%
+  filter(percent_substrate < 0 | percent_substrate > 100)
+
+if (nrow(invalid_percent) > 0) {
+  warning("Some percent_substrate values are outside the valid range (0-100). Please check the following rows:")
+  print(invalid_percent)
+} else {
+  message("All percent_substrate values are within the valid range (0-100).")
+}
+
+```
+

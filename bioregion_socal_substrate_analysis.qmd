@@ -4,6 +4,9 @@ format: html
 editor: visual
 ---
 
+## Setup
+
+## Load libraries
 ```{r, message=FALSE, warnings=FALSE}
 # Load libraries
 
@@ -24,6 +27,7 @@ library(units)
 library(knitr)
 ```
 
+### Read in substrate and MPA data
 ```{r, message=FALSE, warnings=FALSE}
 # Read in substrate data
 substrate <- readRDS("substrate.rds")
@@ -41,6 +45,7 @@ mpa <- st_read('data/MPA_boundaries') %>%
   st_make_valid()
 ```
 
+### Filter substrate data to socal and join with MPA
 ```{r}
 # Filter to Southern CA
 south_sub <- substrate |>
@@ -51,3 +56,44 @@ south_sub <- substrate |>
 # Join Southern CA to substrate
 south_sub_mpa <- st_intersection(mpa, south_sub)
 ```
+
+```{r}
+# Calculate true area of substrate in the MPA 
+south_sub_mpa$area_sub_m2 <- st_area(south_sub_mpa) 
+```
+```{r}
+# Drop geometry
+south_sub_mpa <- south_sub_mpa %>%
+  st_drop_geometry() %>%
+  drop_units()
+```
+
+```{r}
+# Make a summary table
+mpa_area_summary <- south_sub_mpa %>%
+  
+  group_by(name, area_m2_mpa, pmep_zone_detail, type, cmecs_sc_name) %>%
+  
+  summarise(
+    area_m2_sub = sum(area_m2_sub, na.rm = TRUE)) %>%
+  
+  ungroup() %>%
+  
+  mutate(percent_substrate = (area_m2_sub / area_m2_mpa) * 100)
+```
+
+```{r}
+# Check if any percent_substrate values are below 0 or above 100
+
+invalid_percent <- mpa_area_summary %>%
+  filter(percent_substrate < 0 | percent_substrate > 100)
+
+if (nrow(invalid_percent) > 0) {
+  warning("Some percent_substrate values are outside the valid range (0-100). Please check the following rows:")
+  print(invalid_percent)
+} else {
+  message("All percent_substrate values are within the valid range (0-100).")
+}
+
+```
+
