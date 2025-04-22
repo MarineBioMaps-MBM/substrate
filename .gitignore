@@ -1,0 +1,11 @@
+# Add data folder to gitignore
+/data
+
+# Add RDS files to gitignore
+Biota.rds
+substrate.rds
+
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata

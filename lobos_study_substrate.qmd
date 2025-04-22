@@ -88,11 +88,3 @@ ggplot(mpa_area, aes(x = cmecs_sc_name, y = pct_substrate, fill = cmecs_sc_name)
   scale_fill_manual(values = c('#CEB6AD','#796655' )) +
   theme(legend.position = 'none') + facet_wrap(~type)
 ```
-
-```{r}
-print(head(mpa_area))
-```
-
-```{r}
-print(head(mpa_lobos))
-```

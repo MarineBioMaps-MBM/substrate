@@ -1,0 +1,36 @@
+---
+title: "Saving substrate data file"
+format: html
+editor: visual
+---
+
+## Setup
+
+```{r}
+#| message: false
+#| warning: false
+
+# Load libraries
+library(here)
+library(stars)
+```
+
+```{r}
+#| message: false
+#| warning: false
+
+# Read in data
+
+# Set path to geodatabase folder
+gdb_path <- here('data/PMEP_biotic.gdb')
+
+# List all layers
+layers <- st_layers(gdb_path)
+
+data <- st_read(gdb_path, layer = 'West_Coast_USA_Nearshore_CMECS_Substrate_Habitat_V2' )
+```
+
+```{r}
+# Save file as RDS
+saveRDS(data, "substrate.rds")
+```
