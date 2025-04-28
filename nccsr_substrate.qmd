@@ -1,0 +1,130 @@
+---
+title: "nccsr_substrate"
+format: html
+editor: visual
+---
+
+NCCSR stands for North Central Coast Study Region, as defined by the California Department of Fish and Wildlife.
+
+## Setup
+
+```{r, message = FALSE}
+# Load libraries
+
+# Data wrangling
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(here)
+
+# Mapping
+library(stars)
+
+library(units)
+
+library(paletteer)
+library(stringr)
+```
+
+```{r}
+# Read in data
+
+# Set path
+rds.dir <- "/capstone/marinebiomaps/data/rds-files"
+
+# Load data
+nccsr_substrate <- readRDS(file.path(rds.dir, "nccsr_substrate.rds"))
+
+# Drop geometry for calculations
+nccsr_substrate <- nccsr_substrate %>%
+  st_drop_geometry() 
+```
+
+## Calculate percentages
+
+```{r}
+# Find total substrate area in MPAs for all MPAs
+total_nccsr_ha_sub <- sum(nccsr_substrate$area_ha)
+# Check statement
+print(paste0("The total area of substrate data within MPAs in Ha: ", round(total_nccsr_ha_sub)))
+
+
+# Summarize total area by substrate category and calculate percentage
+substrate_area <- nccsr_substrate %>% 
+  group_by(cmecs_sc_category) %>% 
+  
+  # Add together the same categories
+  summarize(total_area_ha = sum(area_ha, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  # Find percentage
+  mutate(percent_of_total = (total_area_ha / total_nccsr_ha_sub ) * 100) %>%
+  
+  # Drop unclassified column
+  filter(cmecs_sc_category != "Unclassified")
+
+# Remove scientific notation
+options(scipen = 999)
+```
+
+```{r}
+# Check if any percentages fall outside normal changes
+
+invalid_percent <- substrate_area %>%
+  filter(percent_of_total < 0 | percent_of_total > 100)
+
+if (nrow(invalid_percent) > 0) {
+  warning("Some percent_of_total values are outside the valid range (0-100). Check the following rows:")
+  print(invalid_percent)
+} else {
+  message("All percent_of_total values are within the valid range (0-100).")
+}
+
+```
+
+## Plot
+
+```{r, warning=FALSE}
+# Wrap longer category names
+substrate_area$cmecs_sc_category <- str_wrap(substrate_area$cmecs_sc_category, width = 20)
+
+
+# Define palette -- adapted from lisa::C_M_Coolidge from scale_fill_paletteer
+substrate_palette <- c("#204035FF", "#4A7169FF", "#849383", "#BEB59CFF", "#735231FF", "#49271BFF")
+
+# Plot the data
+p1 <- ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total, fill = cmecs_sc_category)) +
+  
+  geom_col() +
+  
+  # Flip bars
+  coord_flip() +
+  
+  # Add labels
+  labs(title = "Substrate Percentages in all\nNorth Central Coast (NCCSR) MPAs",
+         y = "Percent Substrate",
+         x = "Substrate Categories") +
+  
+  # Apply color palette
+  scale_fill_manual(values = substrate_palette) +
+  
+  # Adjust theme
+  theme_classic() +
+  theme(legend.position='none',
+        axis.title.y = element_text(margin = margin(r = 20)),
+        text = element_text(size = 18)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 100)) +
+  
+  # Add text label
+  geom_label(
+    aes(label = paste0(round(percent_of_total, 1), "%")), 
+    position = position_stack(vjust = 0.5), 
+    size = 6,
+    y = 8,
+    fill = "white",
+    label.size = 0)
+```
+
+```{r}
+# Save plot
+ggsave("nccsr.png", plot = p1, width = 12, height = 8, bg = "transparent")
+```
