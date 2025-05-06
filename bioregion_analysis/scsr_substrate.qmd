@@ -3,6 +3,7 @@ title: "scsr_substrate"
 format: html
 editor: visual
 ---
+
 SCSR stands for South Coast Study Region, as defined by the California Department of Fish and Wildlife.
 
 ## Setup
@@ -23,6 +24,7 @@ library(units)
 
 library(paletteer)
 library(stringr)
+library(showtext)
 ```
 
 ```{r}
@@ -40,6 +42,7 @@ scsr_substrate <- scsr_substrate %>%
 ```
 
 ## Percentage Calculation
+
 ```{r}
 # Find total substrate area in MPAs for all MPAs
 total_scsr_ha_sub <- sum(scsr_substrate$area_ha)
@@ -78,8 +81,14 @@ if (nrow(invalid_percent) > 0) {
 }
 
 ```
+
 ## Plot
+
 ```{r, warning=FALSE}
+
+font_add_google("Montserrat", "montserrat")
+showtext_auto()
+
 # Wrap longer category names
 substrate_area$cmecs_sc_category <- str_wrap(substrate_area$cmecs_sc_category, width = 20)
 
@@ -87,7 +96,7 @@ substrate_area$cmecs_sc_category <- str_wrap(substrate_area$cmecs_sc_category, w
 substrate_palette <- c("#204035FF", "#4A7169FF", "#849383", "#BEB59CFF", "#735231FF", "#49271BFF")
 
 # Plot the data
-p1 <- ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total, fill = cmecs_sc_category)) +
+ggplot(substrate_area, aes(x = cmecs_sc_category, y = percent_of_total, fill = cmecs_sc_category)) +
   
   geom_col() +
   
@@ -106,7 +115,7 @@ p1 <- ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total,
   theme_classic() +
   theme(legend.position='none',
         axis.title.y = element_text(margin = margin(r = 20)),
-        text = element_text(size = 18)) +
+        text = element_text(size = 18), family = "montserrat") +
   scale_y_continuous(expand = c(0, 0), limits = c(0, 100)) +
   
   # Add text label
@@ -123,5 +132,3 @@ p1 <- ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total,
 # Save plot
 ggsave("scsr.png", plot = p1, width = 12, height = 8, bg = "transparent")
 ```
-
-

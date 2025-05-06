@@ -43,5 +43,4 @@ substrate
 │  └──pointlobos_substrate_analysis
 |  └──statewide_substrate_analysis
 |  └──saving_substrate_data
-│
 ```

@@ -92,7 +92,7 @@ substrate_area$cmecs_sc_category <- str_wrap(substrate_area$cmecs_sc_category, w
 substrate_palette <- c("#204035FF", "#4A7169FF", "#849383", "#BEB59CFF", "#735231FF", "#49271BFF")
 
 # Plot the data
-p1 <- ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total, fill = cmecs_sc_category)) +
+p1 <- ggplot(substrate_area, aes(reorder(cmecs_sc_category, percent_of_total), percent_of_total, fill = cmecs_sc_category)) +
   
   geom_col() +
   
@@ -128,3 +128,5 @@ p1 <- ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total,
 # Save plot
 ggsave("nccsr.png", plot = p1, width = 12, height = 8, bg = "transparent")
 ```
+
+## add monterrat font
