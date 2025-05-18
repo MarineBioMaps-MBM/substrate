@@ -29,8 +29,11 @@ library(stringr)
 ```{r, message=FALSE}
 # Read in data from primary substrate RDS
 rds.dir <- "/capstone/marinebiomaps/data/rds-files"
-substrate <- readRDS(file.path(rds.dir, "substrate.rds")) %>% st_drop_geometry() %>%
+substrate <- readRDS(file.path(rds.dir, "substrate.rds")) %>% 
   filter(cmecs_sc_category != "Unclassified")
+
+# Project to CRS
+substrate <- st_transform(substrate, crs = 32610) %>% st_drop_geometry()
 ```
 
 ## Find percentages
@@ -83,7 +86,7 @@ substrate_area$cmecs_sc_category <- str_wrap(substrate_area$cmecs_sc_category, w
 substrate_palette <- c("#204035FF", "#4A7169FF", "#849383", "#BEB59CFF", "#998467", "#735231FF", "#49271BFF")
 
 # Plot the data
-p1<- ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total, fill = cmecs_sc_category)) +
+ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total, fill = cmecs_sc_category)) +
   
   geom_col() +
   
@@ -117,7 +120,7 @@ p1<- ggplot(substrate_area, aes(as.factor(cmecs_sc_category), percent_of_total, 
 
 ```{r}
 # Save plot
-ggsave("allmpa.png", plot = p1, width = 12, height = 8, bg = "transparent")
+# ggsave("allmpa.png", plot = p1, width = 12, height = 8, bg = "transparent")
 ```
 
 # Substrate in MPAs
@@ -211,5 +214,5 @@ ggplot(substrate_area_mpa, aes(as.factor(cmecs_sc_category), percent_of_total_mp
 
 ```{r}
 # Save plot
-ggsave("submpa.png", plot = p2, width = 12, height = 8, bg = "transparent")
+# ggsave("submpa.png", plot = p2, width = 12, height = 8, bg = "transparent")
 ```
