@@ -1,0 +1,720 @@
+---
+title: "1"
+format: html
+editor: visual
+---
+
+## Call libraries
+
+```{r}
+# Load in the packages for this data analysis
+librarian::shelf(tidyverse, dplyr, terra, tmap, sf, here, stars, janitor, units, showtext, knitr, kableExtra)
+# Adding in our text
+font_add_google("Montserrat", "montserrat")
+showtext_auto()
+
+options(scipen = 999)
+```
+
+## Statewide Analysis:
+
+### Find the total area of state waters using the state water boundary
+
+```{r, message=FALSE}
+# Read in the study regions data
+state_boundaries <-  sf::st_read("/capstone/marinebiomaps/data/MLPA_Study_Regions")
+```
+
+```{r}
+# Transform to the UTM 10N crs for California
+state_boundary_transform <- st_transform(state_boundaries, crs= 32610)
+statewater_area <- sum(st_area(state_boundary_transform) / 10000)
+```
+
+```{r}
+# Calculate area in hectares
+sr_boundaries <- state_boundary_transform |>
+  mutate(area_ha = as.numeric(st_area(geometry)) / 10000)
+```
+
+```{r}
+scsr_area <- 795004.7
+ccsr_area <- 296913.5
+nccsr_area <- 197503.2
+ncsr_area <- 266790.1
+```
+
+### Find area in hectares by Substrate Category
+
+```{r}
+# Read in the prefiltered sub data from the database
+rds.dir <- "/capstone/marinebiomaps/data/rds-files"
+ca_sub <- readRDS(file.path(rds.dir, "substrate.rds"))
+
+
+# Remove the unclassified observations
+ca_sub_clean <- ca_sub %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop the geometries to speed up run time
+ca_sub_simple <- ca_sub_clean %>%
+  st_drop_geometry()
+
+# Create a column that has the total area of socal sub
+ca_sub_simple <- ca_sub_simple %>%
+  mutate(total_area = sum(area_ha) / 10000)
+```
+
+```{r}
+statewater_area
+```
+
+```{r}
+unique(ca_sub_simple$total_area)
+```
+
+### Get absolute abundance for sub
+
+```{r}
+# Create a sum of area column in mpa_transform
+ca_sub_simple_2 <- ca_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  
+  summarise(
+    sub_area = sum(area_ha, na.rm = TRUE) / 10000,
+  ) %>%
+  mutate(pct_sub = (sub_area / statewater_area) * 100) %>% drop_units()
+```
+
+```{r}
+ # Create table
+kable(ca_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total Statewaters")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+### Repeating our calculations within the MPA system
+
+```{r}
+# Load in the MPA boundary data
+MPA_boundary <- sf::st_read("/capstone/marinebiomaps/data/MPA_boundaries")
+
+# Filter to Point Lobos locations
+mpa <- MPA_boundary %>%
+   clean_names() %>% st_make_valid()
+```
+
+```{r}
+# Reproject to UTM 10
+mpa_transform <- st_transform(mpa, crs= 32610)
+mpa_area <-  sum(st_area(mpa_transform) / 10000)
+```
+
+```{r}
+# Join the data sets together
+ca_sub_mpa <- st_intersection(ca_sub_clean, mpa_transform)
+```
+
+```{r}
+ca_sub_mpa$sub_area_ha = (st_area(ca_sub_mpa) / 10000)
+```
+
+```{r}
+# Remove geometries to run faster
+ca_sub_mpa_simple <- ca_sub_mpa %>%
+  st_drop_geometry()
+```
+
+```{r}
+# Create a sum of area column in mpa_transform
+ca_sub_mpa_2 <- ca_sub_mpa_simple %>%
+  group_by(cmecs_sc_category) %>%  # Group by MPA type, substrate group
+  summarise(
+    sub_cat_ha = sum(sub_area_ha, na.rm = TRUE),
+  ) %>%
+  mutate(pct_sub = (sub_cat_ha / 262882) * 100)
+```
+
+```{r}
+ # Create table
+kable(ca_sub_mpa_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total MPA Area")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+## Tornado for Statewide
+
+```{r}
+# Drop units
+ca_sub_simple_2 <- drop_units(ca_sub_simple_2)
+ca_sub_mpa_2 <- drop_units(ca_sub_mpa_2)
+
+# Combine dfs to find difference
+sub_diff <- full_join(ca_sub_simple_2, ca_sub_mpa_2, by = "cmecs_sc_category") %>%
+  select(
+    cmecs_sc_category,
+    State = pct_sub.x,
+    MPA = pct_sub.y
+  ) %>%
+  mutate(Difference = MPA - State)
+
+# Center chart
+max_abs <- max(abs(sub_diff$Difference), na.rm = TRUE)
+
+# Plot
+ggplot(sub_diff, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25), Difference), fill = Difference > 0)) +
+  
+  # Plot lines and dots
+  geom_segment(aes(x = 0, xend = Difference, yend = str_wrap(cmecs_sc_category, 25)), linewidth = 1) +
+  geom_point() +
+  
+  # Create center line at 0
+  geom_vline(xintercept = 0, color = "black") +
+  
+  # Fix x-axis scales
+ scale_x_continuous(
+  name = "Difference in Substrate (%) (MPA - State)",
+  # breaks = c(-1, -0.5, 0, 0.5, 1),
+  labels = scales::percent_format(scale = 1, accuracy = 0.1),
+  limits = c(-60, 60)) +
+  
+  # Apply color and labels
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "tomato")) +
+  labs(
+    title = "Substrate Composition: MPA vs State Waters",
+    y = "") +
+  
+  # Apply themes
+  theme_minimal() +
+  
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20),
+        text = element_text(size = 18, family = "montserrat"),
+        axis.title.x = element_text(margin = margin(t = 10)))
+```
+
+## Abundance in SCSR:
+
+### Region wide:
+
+```{r}
+# Make regional boundaries
+scsr <- state_boundary_transform %>%
+  filter(Study_Regi == "SCSR")
+
+ccsr <- state_boundary_transform %>%
+  filter(Study_Regi == "CCSR")
+
+nccsr <- state_boundary_transform %>%
+  filter(Study_Regi == "NCCSR")
+
+ncsr <- state_boundary_transform %>%
+  filter(Study_Regi == "NCSR")
+```
+
+```{r}
+# Make valid the scsr geometry
+scsr <- scsr %>% 
+  st_make_valid()
+
+# Find all sub in scsr region
+scsr_sub <- st_intersection(scsr,ca_sub_clean)
+```
+
+```{r}
+# Remove the unclassified observations
+scsr_sub_clean <- scsr_sub %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop geometries for ease of processing
+scsr_sub_simple <- scsr_sub_clean %>%
+  st_drop_geometry()
+
+# Create a sum of area column in mpa_transform
+sub_scsr <- scsr_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  # Group by MPA type, substrate group
+  summarise(
+    sub_area = sum(area_ha, na.rm = TRUE) / 10000,
+  ) %>%
+  mutate(pct_sub = (sub_area /scsr_area) * 100)
+```
+
+```{r}
+ # Create table
+kable(sub_scsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total SCSR Area")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+### In SCSR MPAs:
+
+```{r}
+# Read in the prefiltered sub data from the database
+rds.dir <- "/capstone/marinebiomaps/data/rds-files"
+socal_sub <- readRDS(file.path(rds.dir, "scsr_substrate.rds"))
+```
+
+```{r}
+# Reproject to crs for WGS84 UTM zone 10N
+socal_sub_transform <- st_transform(socal_sub, crs = 32610)
+
+# Calculate area in hectares
+socal_sub_transform$socal_ha <- (st_area(socal_sub_transform) / 10000)
+
+# Remove the unclassified observations
+socal_sub_clean <- socal_sub_transform %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop geometries for ease of processing
+socal_sub_simple <- socal_sub_clean %>%
+  st_drop_geometry()
+
+# Create a sum of area column in mpa_transform
+socal_sub_simple_2 <- socal_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  # Group by MPA type, substrate group
+  summarise(
+    sub_area = sum(socal_ha, na.rm = TRUE),
+  ) %>%
+  mutate(pct_sub = (sub_area /scsr_area ) * 100)
+```
+
+```{r}
+ # Create table
+kable(socal_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total South Coast Region")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+## Tornado -SCSR
+
+```{r}
+# Drop units
+socal_sub_simple_2 <- drop_units(socal_sub_simple_2)
+sub_scsr <- drop_units(sub_scsr)
+
+# Combine dfs to find difference
+sub_diff2 <- full_join(socal_sub_simple_2, sub_scsr, by = "cmecs_sc_category") %>%
+  select(
+    cmecs_sc_category,
+    State = pct_sub.x,
+    MPA = pct_sub.y
+  ) %>%
+  mutate(Difference = MPA - State)
+
+# Center chart
+max_abs <- max(abs(sub_diff$Difference), na.rm = TRUE)
+
+# Plot
+ggplot(sub_diff2, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25), Difference), fill = Difference > 0)) +
+  
+  # Plot lines and dots
+  geom_segment(aes(x = 0, xend = Difference, yend = str_wrap(cmecs_sc_category, 25)), size = 1) +
+  geom_point() +
+  
+  # Create center line at 0
+  geom_vline(xintercept = 0, color = "black") +
+  
+  # Fix x-axis scales
+ scale_x_continuous(
+  name = "Difference in Substrate (%) (MPA - State)",
+#  breaks = c(-1, -0.5, 0, 0.5, 1),
+  labels = scales::percent_format(scale = 1, accuracy = 0.1),
+  limits = c(-11, 11)) +
+  
+  # Apply color and labels
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "tomato")) +
+  labs(
+    title = "Substrate Composition: SCSR MPA vs State Waters",
+    y = "") +
+  
+  # Apply themes
+  theme_minimal() +
+  
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20),
+        text = element_text(size = 18, family = "montserrat"),
+        axis.title.x = element_text(margin = margin(t = 10)))
+```
+
+## Abundance in CCSR:
+
+### In CCSR region
+
+```{r}
+# Make valid the scsr geometry
+ccsr <- ccsr %>% 
+  st_make_valid()
+
+# Find all sub in scsr region
+ccsr_sub <- st_intersection(ccsr,ca_sub_clean)
+```
+
+```{r}
+# Remove the unclassified observations
+ccsr_sub_clean <- ccsr_sub %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop geometries for ease of processing
+ccsr_sub_simple <- ccsr_sub_clean %>%
+  st_drop_geometry()
+
+# Create a sum of area column in mpa_transform
+sub_ccsr <- ccsr_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  # Group by MPA type, substrate group
+  summarise(
+    sub_area = sum(area_ha, na.rm = TRUE) / 10000,
+  ) %>%
+  mutate(pct_sub = (sub_area /ccsr_area) * 100)
+```
+
+```{r}
+ # Create table
+kable(sub_ccsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total Central Coast Region")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+### In CCSR MPAs:
+
+```{r}
+# Read in the prefiltered sub data from the database
+rds.dir <- "/capstone/marinebiomaps/data/rds-files"
+central_sub <- readRDS(file.path(rds.dir, "ccsr_substrate.rds"))
+```
+
+```{r}
+# Reproject to crs for WGS84 UTM zone 10N
+cencal_sub_transform <- st_transform(central_sub, crs = 32610)
+
+# Calculate area in hectares
+cencal_sub_transform$cencal_ha <- (st_area(cencal_sub_transform) / 10000)
+
+# Remove the unclassified observations
+cencal_sub_clean <- cencal_sub_transform %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop geometries for ease of processing
+cencal_sub_simple <- cencal_sub_clean %>%
+  st_drop_geometry()
+
+# Create a sum of area column in mpa_transform
+cencal_sub_simple_2 <- cencal_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  # Group by MPA type, substrate group
+  summarise(
+    sub_area = sum(cencal_ha, na.rm = TRUE),
+  ) %>%
+  mutate(pct_sub = (sub_area /ccsr_area ) * 100)
+```
+
+```{r}
+ # Create table
+kable(cencal_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total Central Coast Region MPAS")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+## Tornado CCSR
+
+```{r}
+# Drop units
+cencal_sub_simple_2 <- drop_units(cencal_sub_simple_2)
+sub_ccsr <- drop_units(sub_ccsr)
+
+# Combine dfs to find difference
+sub_diff3 <- full_join(cencal_sub_simple_2, sub_ccsr, by = "cmecs_sc_category") %>%
+  select(
+    cmecs_sc_category,
+    State = pct_sub.x,
+    MPA = pct_sub.y) %>%
+    mutate(
+    MPA = replace_na(MPA, 0),            
+    State = replace_na(State, 0),        
+    Difference = MPA - State)
+
+# Center chart
+max_abs <- max(abs(sub_diff$Difference), na.rm = TRUE)
+
+# Plot
+ggplot(sub_diff3, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25), Difference), fill = Difference > 0)) +
+  
+  # Plot lines and dots
+  geom_segment(aes(x = 0, xend = Difference, yend = str_wrap(cmecs_sc_category, 25)), linewidth = 1) +
+  geom_point() +
+  
+  # Create center line at 0
+  geom_vline(xintercept = 0, color = "black") +
+  
+  # Fix x-axis scales
+ scale_x_continuous(
+  name = "Difference in Substrate (%) (MPA - State)",
+#  breaks = c(-1, -0.5, 0, 0.5, 1),
+  labels = scales::percent_format(scale = 1, accuracy = 0.1),
+  limits = c(-11, 11)) +
+  
+  # Apply color and labels
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "tomato")) +
+  labs(
+    title = "Substrate Composition: CCSR MPA vs State Waters",
+    y = "") +
+  
+  # Apply themes
+  theme_minimal() +
+  
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20),
+        text = element_text(size = 18, family = "montserrat"),
+        axis.title.x = element_text(margin = margin(t = 10)))
+```
+
+
+## Abundance in NCCSR:
+
+### In NCCSR Region
+
+```{r}
+# Make valid the scsr geometry
+nccsr <- nccsr %>% 
+  st_make_valid()
+
+# Find all sub in scsr region
+nccsr_sub <- st_intersection(nccsr,ca_sub_clean)
+```
+
+```{r}
+# Remove the unclassified observations
+nccsr_sub_clean <- nccsr_sub %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop geometries for ease of processing
+nccsr_sub_simple <- nccsr_sub_clean %>%
+  st_drop_geometry()
+
+# Create a sum of area column in mpa_transform
+sub_nccsr <- nccsr_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  # Group by MPA type, substrate group
+  summarise(
+    sub_area = sum(area_ha, na.rm = TRUE) / 10000,
+  ) %>%
+  mutate(pct_sub = (sub_area /nccsr_area) * 100)
+```
+
+```{r}
+ # Create table
+kable(sub_nccsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Central Coast Region")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+### In NCCSR MPAs
+
+```{r}
+# Read in the prefiltered sub data from the database
+rds.dir <- "/capstone/marinebiomaps/data/rds-files"
+nccsr_sub <- readRDS(file.path(rds.dir, "nccsr_substrate.rds"))
+```
+
+```{r}
+# Reproject to crs for WGS84 UTM zone 10N
+nccsr_sub_transform <- st_transform(nccsr_sub, crs = 32610)
+
+# Calculate area in hectares
+nccsr_sub_transform$nccsr_ha <- (st_area(nccsr_sub_transform) / 10000)
+
+# Remove the unclassified observations
+nccsr_sub_clean <- nccsr_sub_transform %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop geometries for ease of processing
+nccsr_sub_simple <- nccsr_sub_clean %>%
+  st_drop_geometry()
+
+# Create a sum of area column 
+nccsr_sub_simple_2 <- nccsr_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  
+  summarise(
+    sub_area = sum(nccsr_ha, na.rm = TRUE),
+  ) %>%
+  mutate(pct_sub = (sub_area /nccsr_area ) * 100)
+```
+
+```{r}
+ # Create table
+kable(nccsr_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Central Coast Region")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+## Tornado NCSR
+
+```{r}
+# Drop units
+nccsr_sub_simple_2 <- drop_units(nccsr_sub_simple_2)
+sub_nccsr <- drop_units(sub_nccsr)
+
+# Combine dfs to find difference
+sub_diff4 <- full_join(nccsr_sub_simple_2, sub_nccsr, by = "cmecs_sc_category") %>%
+  select(
+    cmecs_sc_category,
+    State = pct_sub.x,
+    MPA = pct_sub.y
+  ) %>%
+  mutate(Difference = MPA - State)
+
+# Center chart
+max_abs <- max(abs(sub_diff$Difference), na.rm = TRUE)
+
+# Plot
+ggplot(sub_diff4, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25), Difference), fill = Difference > 0)) +
+  
+  # Plot lines and dots
+  geom_segment(aes(x = 0, xend = Difference, yend = str_wrap(cmecs_sc_category, 25)), linewidth = 1) +
+  geom_point() +
+  
+  # Create center line at 0
+  geom_vline(xintercept = 0, color = "black") +
+  
+  # Fix x-axis scales
+ scale_x_continuous(
+  name = "Difference in Substrate (%) (MPA - State)",
+#  breaks = c(-1, -0.5, 0, 0.5, 1),
+  labels = scales::percent_format(scale = 1, accuracy = 0.1),
+  limits = c(-8, 8)) +
+  
+  # Apply color and labels
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "tomato")) +
+  labs(
+    title = "Substrate Composition: NCCSR MPA vs State Waters",
+    y = "") +
+  
+  # Apply themes
+  theme_minimal() +
+  
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20),
+        text = element_text(size = 18, family = "montserrat"),
+        axis.title.x = element_text(margin = margin(t = 10)))
+```
+
+## Abundance in NCSR:
+
+### In the NCSR Region:
+
+```{r}
+# Make valid the scsr geometry
+ncsr <- ncsr %>% 
+  st_make_valid()
+
+# Find all sub in scsr region
+ncsr_sub <- st_intersection(ncsr,ca_sub_clean)
+```
+
+```{r}
+# Remove the unclassified observations
+ncsr_sub_clean <- ncsr_sub %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop geometries for ease of processing
+ncsr_sub_simple <- ncsr_sub_clean %>%
+  st_drop_geometry()
+
+# Create a sum of area column in mpa_transform
+sub_ncsr <- ncsr_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  # Group by MPA type, substrate group
+  summarise(
+    sub_area = sum(area_ha, na.rm = TRUE) / 10000,
+  ) %>%
+  mutate(pct_sub = (sub_area /ncsr_area) * 100)
+```
+
+```{r}
+ # Create table
+kable(sub_ncsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Coast Region")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+### In NCSR MPAs
+
+```{r}
+# Read in the prefiltered sub data from the database
+rds.dir <- "/capstone/marinebiomaps/data/rds-files"
+ncsr_sub <- readRDS(file.path(rds.dir, "ncsr_substrate.rds"))
+```
+
+```{r}
+# Reproject to crs for WGS84 UTM zone 10N
+norcal_sub_transform <- st_transform(ncsr_sub, crs = 32610)
+
+# Calculate area in hectares
+norcal_sub_transform$norcal_ha <- (st_area(norcal_sub_transform) / 10000)
+
+# Remove the unclassified observations
+norcal_sub_clean <- norcal_sub_transform %>%
+  filter(cmecs_sc_category != "Unclassified")
+
+# Drop geometries for ease of processing
+norcal_sub_simple <- norcal_sub_clean %>%
+  st_drop_geometry()
+
+# Create a sum of area column in mpa_transform
+norcal_sub_simple_2 <- norcal_sub_simple %>%
+  group_by(cmecs_sc_category) %>%  # Group by MPA type, substrate group
+  summarise(
+    sub_area = sum(norcal_ha, na.rm = TRUE),
+  ) %>%
+  mutate(pct_sub = (sub_area /ncsr_area ) * 100)
+```
+
+```{r}
+ # Create table
+kable(norcal_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Coast Region MPAs")) %>%
+  kable_material(c("striped", "hover"))
+```
+
+## Tornado NCSR
+
+```{r}
+# Drop units
+norcal_sub_simple_2 <- drop_units(norcal_sub_simple_2)
+sub_ncsr <- drop_units(sub_ncsr)
+
+# Combine dfs to find difference
+sub_diff5 <- full_join(norcal_sub_simple_2, sub_ncsr, by = "cmecs_sc_category") %>%
+  select(
+    cmecs_sc_category,
+    State = pct_sub.x,
+    MPA = pct_sub.y) %>%
+    mutate(
+    MPA = replace_na(MPA, 0),            
+    State = replace_na(State, 0),        
+    Difference = MPA - State)
+
+# Center chart
+max_abs <- max(abs(sub_diff$Difference), na.rm = TRUE)
+
+# Plot
+ggplot(sub_diff5, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25), Difference), fill = Difference > 0)) +
+  
+  # Plot lines and dots
+  geom_segment(aes(x = 0, xend = Difference, yend = str_wrap(cmecs_sc_category, 25)), linewidth = 1) +
+  geom_point() +
+  
+  # Create center line at 0
+  geom_vline(xintercept = 0, color = "black") +
+  
+  # Fix x-axis scales
+ scale_x_continuous(
+  name = "Difference in Substrate (%) (MPA - State)",
+#  breaks = c(-1, -0.5, 0, 0.5, 1),
+  labels = scales::percent_format(scale = 1, accuracy = 0.1),
+  limits = c(-7, 7)) +
+  
+  # Apply color and labels
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "tomato")) +
+  labs(
+    title = "Substrate Composition: NCSR MPA vs State Waters",
+    y = "") +
+  
+  # Apply themes
+  theme_minimal() +
+  
+  theme(legend.position = "none",
+        plot.title = element_text(size = 20),
+        text = element_text(size = 18, family = "montserrat"),
+        axis.title.x = element_text(margin = margin(t = 10)))
+```
