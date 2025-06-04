@@ -1,0 +1,145 @@
+---
+title: "interaction"
+format: html
+
+---
+
+## Setup: Load libraries and read in data
+```{r, message=FALSE, warning=FALSE}
+# Load libraries
+librarian::shelf(tidyverse, dplyr, terra, tmap, sf, here, stars, janitor, units, showtext, knitr, kableExtra)
+```
+
+```{r}
+# Read and clean substrate data
+rds.dir <- "/capstone/marinebiomaps/data/rds-files"
+ca_sub1 <- readRDS(file.path(rds.dir, "sub_in_statewater.rds"))
+
+# Read and clean biota data
+ca_biota1 <- readRDS(file.path(rds.dir, "biota.rds")) %>%
+  filter(cmecs_bc_category != "Unclassified")
+```
+
+### Match CRS and filter to wanted categories
+```{r}
+# Ensure same CRS
+ca_sub1 <- st_transform(ca_sub1, crs = 32610)
+ca_biota1 <- st_transform(ca_biota1, crs = 32610)
+```
+
+```{r}
+# Kelp
+kelp <- ca_biota1 %>%
+  filter(cmecs_bc_category == "Canopy-Forming Algal Bed (Kelp)")
+
+# Hard and non-rock sub
+substrates <- ca_sub1 %>%
+  filter(cmecs_sc_category %in% c("Unconsolidated Mineral Substrate", "Rock Substrate", "Fine Unconsolidated Substrate", "Coarse Unconsolidated Substrate"))
+```
+
+
+## Intersection statewide -- saving RDS
+```{r, warning=FALSE}
+# Intersect kelp and substrate data
+intersect_sub_kelp <- st_intersection(kelp, substrates)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Find area and convert to hectares
+intersect_statewide <- intersect_sub_kelp %>%
+  mutate(intersection_area_ha = as.numeric(st_area(.) / 10000)) 
+
+# Find total area of intersection by substrate type, add depth zones
+summary_by_type_sw <- intersect_statewide %>%
+  group_by(cmecs_sc_category, pmep_zone_detail) %>%
+  summarize(total_area_ha = sum(intersection_area_ha, na.rm = TRUE))
+```
+
+```{r}
+# Save as RDS for easier loading
+saveRDS(summary_by_type_sw, "interaction_statewide_depths.rds")
+```
+
+
+## Interactions in MPAs -- saving RDS
+
+```{r, message=FALSE, warning=FALSE}
+# Load in the MPA boundary data
+MPA_boundary <- sf::st_read("/capstone/marinebiomaps/data/MPA_boundaries")
+
+# Clean data
+mpa <- MPA_boundary %>%
+   clean_names() %>% st_make_valid()
+```
+
+```{r, warning=FALSE}
+# Change crs
+mpa <- st_transform(mpa, crs = 32610)
+
+# Intersect MPA with previous (statewide) overlap
+intersect_mpa <- st_intersection(mpa, intersect_sub_kelp)
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Find area and convert to hectares
+intersect_mpa_statewide <- intersect_mpa %>%
+  mutate(intersection_area_ha = as.numeric(st_area(.) / 10000)) 
+
+# Find total area of intersection by substrate type
+summary_by_type <- intersect_mpa_statewide %>%
+  group_by(cmecs_sc_category, pmep_zone_detail) %>%
+  summarize(total_area_ha = sum(intersection_area_ha, na.rm = TRUE))
+```
+
+```{r}
+saveRDS(summary_by_type, "interaction_statewide_mpa_depths.rds")
+```
+
+## Generate percentages
+
+### MPA Overlap
+
+```{r}
+# MPA overlap table
+summary_by_type <- summary_by_type %>% st_drop_geometry() %>%
+  group_by(cmecs_sc_category) %>%
+  mutate(pct_sub = (total_area_ha / 262882) * 100,
+         pct_kelp = total_area_ha / 38230.91 * 100)
+
+
+ # Create table
+kable(summary_by_type, col.names = c("Substrate Category", "Depth Zone", 
+                              
+                                    "Overlap Area (ha) in MPAs", "Percent overlap in MPA",
+                                    "Percent of Kelp Area")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover")) 
+```
+
+### Statewide Overlap
+```{r, message=FALSE, warning=FALSE}
+# Read in statewide overlap data
+state_boundaries <-  sf::st_read("/capstone/marinebiomaps/data/MLPA_Study_Regions")
+
+statewide <- readRDS("interaction_statewide_depths.rds") %>% st_drop_geometry()
+
+# Transform to the UTM 10N crs for California
+state_boundary_transform <- st_transform(state_boundaries, crs= 32610) %>% st_make_valid()
+statewater_area <- sum(st_area(state_boundary_transform) / 10000) %>% drop_units()
+```
+
+```{r}
+# calculate percentages
+statewide <- statewide %>% st_drop_geometry() %>%
+  group_by(cmecs_sc_category) %>%
+  mutate(pct_sub = (total_area_ha / statewater_area) * 100,
+         pct_kelp = total_area_ha / 38230.91 * 100)
+
+
+ # Create table
+kable(statewide, col.names = c("Substrate Category", "Depth Zone", 
+                          
+                                    "Overlap Area (ha) Statewide", "Percent overlap Statewide",
+                                    "Percent of Kelp Area")) %>%
+  kable_material(c("striped", "hover"))
+```
+

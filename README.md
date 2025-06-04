@@ -59,6 +59,14 @@ This file contains a quarto document detailing statewide analysis of substrate p
 
 This quarto documents details how to load in and save PMEP substrate data as an .RDS file used for all calculations in this project.
 
+**interaction:**
+
+This quarto document shows finding areas of biotopes / kelp and substrate interactions.
+
+**substrate_abundance_calculations:**
+
+This quarto document shows finding the abundance of substrate in MPAs and along the coast for statewide and all study regions, with tornado plots.
+
 ## Repository Structure
 
     substrate
@@ -68,6 +76,8 @@ This quarto documents details how to load in and save PMEP substrate data as an 
     |     └──scsr_substrate.qmd
     |     └──ncsr_substrate.qmd
     |     └──ccsr_substrate.qmd
-    │  └──pointlobos_substrate_analysis
-    |  └──statewide_substrate_analysis
-    |  └──saving_substrate_data
+    │  └──pointlobos_substrate_analysis.qmd
+    |  └──statewide_substrate_analysis.qmd
+    |  └──saving_substrate_data.qmd
+    |  └──interaction.qmd
+    |  └──substrate_abundance_calculations.qmd

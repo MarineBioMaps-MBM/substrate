@@ -1,7 +1,6 @@
 ---
-title: "1"
+title: "substrate_abundance_calculations"
 format: html
-editor: visual
 ---
 
 ## Call libraries
@@ -9,6 +8,7 @@ editor: visual
 ```{r}
 # Load in the packages for this data analysis
 librarian::shelf(tidyverse, dplyr, terra, tmap, sf, here, stars, janitor, units, showtext, knitr, kableExtra)
+
 # Adding in our text
 font_add_google("Montserrat", "montserrat")
 showtext_auto()
@@ -25,10 +25,10 @@ options(scipen = 999)
 state_boundaries <-  sf::st_read("/capstone/marinebiomaps/data/MLPA_Study_Regions")
 ```
 
-```{r}
+```{r, message=FALSE}
 # Transform to the UTM 10N crs for California
-state_boundary_transform <- st_transform(state_boundaries, crs= 32610)
-statewater_area <- sum(st_area(state_boundary_transform) / 10000)
+state_boundary_transform <- st_transform(state_boundaries, crs= 32610) %>% st_make_valid()
+statewater_area <- sum(st_area(state_boundary_transform) / 10000) %>% drop_units()
 ```
 
 ```{r}
@@ -38,6 +38,7 @@ sr_boundaries <- state_boundary_transform |>
 ```
 
 ```{r}
+# Assign total areas for each region
 scsr_area <- 795004.7
 ccsr_area <- 296913.5
 nccsr_area <- 197503.2
@@ -46,43 +47,46 @@ ncsr_area <- 266790.1
 
 ### Find area in hectares by Substrate Category
 
-```{r}
+```{r, warning=FALSE}
 # Read in the prefiltered sub data from the database
 rds.dir <- "/capstone/marinebiomaps/data/rds-files"
 ca_sub <- readRDS(file.path(rds.dir, "substrate.rds"))
 
+# Transform data
+ca_sub <- st_transform(ca_sub, crs= 32610)
 
 # Remove the unclassified observations
 ca_sub_clean <- ca_sub %>%
   filter(cmecs_sc_category != "Unclassified")
 
-# Drop the geometries to speed up run time
-ca_sub_simple <- ca_sub_clean %>%
-  st_drop_geometry()
-
-# Create a column that has the total area of socal sub
-ca_sub_simple <- ca_sub_simple %>%
-  mutate(total_area = sum(area_ha) / 10000)
+# Intersect with state boundaries to remove excess data
+ca_sub_clean <- ca_sub_clean %>%
+  st_intersection(state_boundary_transform)
 ```
 
 ```{r}
-statewater_area
+saveRDS(ca_sub_clean, "sub_in_statewater.rds")
 ```
 
-```{r}
-unique(ca_sub_simple$total_area)
-```
 
 ### Get absolute abundance for sub
 
 ```{r}
-# Create a sum of area column in mpa_transform
-ca_sub_simple_2 <- ca_sub_simple %>%
-  group_by(cmecs_sc_category) %>%  
+# Convert from m2 to hectares and group by category
+ca_sub_simple_2 <- ca_sub_clean %>%
+  mutate(area_ha = as.numeric(st_area(.)) / 10000) %>%
+  st_drop_geometry() %>%
+  group_by(cmecs_sc_category) %>%
+
+   # Find substrate area
   summarise(
-    sub_area = sum(area_ha, na.rm = TRUE) / 10000,
-  ) %>%
-  mutate(pct_sub = (sub_area / statewater_area) * 100) %>% drop_units()
+    sub_area = sum(area_ha, na.rm = TRUE)) %>%
+  
+  ungroup() %>%
+  
+  # Find percentages
+  mutate(
+    pct_sub = (sub_area / statewater_area) * 100)
 ```
 
 ```{r}
@@ -93,7 +97,7 @@ kable(ca_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "
 
 ### Repeating our calculations within the MPA system
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Load in the MPA boundary data
 MPA_boundary <- sf::st_read("/capstone/marinebiomaps/data/MPA_boundaries")
 
@@ -139,6 +143,8 @@ kable(ca_sub_mpa_2, col.names = c("Substrate Category", "Area in hectares", "Per
   kable_material(c("striped", "hover"))
 ```
 
+
+
 ## Tornado for Statewide
 
 ```{r}
@@ -173,7 +179,7 @@ ggplot(sub_diff, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25)
   name = "Difference in Substrate (%) (MPA - State)",
   # breaks = c(-1, -0.5, 0, 0.5, 1),
   labels = scales::percent_format(scale = 1, accuracy = 0.1),
-  limits = c(-60, 60)) +
+  limits = c(-5, 5)) +
   
   # Apply color and labels
   scale_fill_manual(
@@ -198,17 +204,41 @@ ggplot(sub_diff, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25)
 ```{r}
 # Make regional boundaries
 scsr <- state_boundary_transform %>%
-  filter(Study_Regi == "SCSR")
+  filter(Study_Regi == "SCSR") %>%
+  mutate(area_ha_scsr = as.numeric(st_area(geometry) / 10000))
 
 ccsr <- state_boundary_transform %>%
-  filter(Study_Regi == "CCSR")
+  filter(Study_Regi == "CCSR") %>%
+  mutate(area_ha_ccsr = as.numeric(st_area(geometry) / 10000))
 
 nccsr <- state_boundary_transform %>%
-  filter(Study_Regi == "NCCSR")
+  filter(Study_Regi == "NCCSR") %>%
+  mutate(area_ha_nccsr = as.numeric(st_area(geometry) / 10000))
 
 ncsr <- state_boundary_transform %>%
-  filter(Study_Regi == "NCSR")
+  filter(Study_Regi == "NCSR") %>%
+  mutate(area_ha_ncsr = as.numeric(st_area(geometry) / 10000))
 ```
+
+```{r}
+# Make regional boundaries for inside MPAs
+scsr_mpa <- mpa %>%
+  filter(study_regi == "SCSR") %>%
+  mutate(area_ha_scsr = as.numeric(st_area(geometry) / 10000))
+
+ccsr_mpa <- mpa %>%
+  filter(study_regi == "CCSR") %>%
+  mutate(area_ha_ccsr = as.numeric(st_area(geometry) / 10000))
+
+nccsr_mpa <- mpa %>%
+  filter(study_regi == "NCCSR") %>%
+  mutate(area_ha_nccsr = as.numeric(st_area(geometry) / 10000))
+
+ncsr_mpa <- mpa %>%
+  filter(study_regi == "NCSR") %>%
+  mutate(area_ha_ncsr = as.numeric(st_area(geometry) / 10000))
+```
+
 
 ```{r}
 # Make valid the scsr geometry
@@ -219,7 +249,12 @@ scsr <- scsr %>%
 scsr_sub <- st_intersection(scsr,ca_sub_clean)
 ```
 
+## In SCSR MPAs
+
 ```{r}
+# Use total area of MPA in scsr
+total_ha_scsr_mpas <- sum(scsr_mpa$area_ha_scsr)
+
 # Remove the unclassified observations
 scsr_sub_clean <- scsr_sub %>%
   filter(cmecs_sc_category != "Unclassified")
@@ -234,16 +269,16 @@ sub_scsr <- scsr_sub_simple %>%
   summarise(
     sub_area = sum(area_ha, na.rm = TRUE) / 10000,
   ) %>%
-  mutate(pct_sub = (sub_area /scsr_area) * 100)
+  mutate(pct_sub = (sub_area /total_ha_scsr_mpas) * 100)
 ```
 
 ```{r}
  # Create table
-kable(sub_scsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total SCSR Area")) %>%
+kable(sub_scsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total SCSR Area in MPA")) %>%
   kable_material(c("striped", "hover"))
 ```
 
-### In SCSR MPAs:
+### In SCSR:
 
 ```{r}
 # Read in the prefiltered sub data from the database
@@ -276,7 +311,10 @@ socal_sub_simple_2 <- socal_sub_simple %>%
 ```
 
 ```{r}
- # Create table
+# Drop units
+socal_sub_simple_2 <- drop_units(socal_sub_simple_2)
+
+# Create table
 kable(socal_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total South Coast Region")) %>%
   kable_material(c("striped", "hover"))
 ```
@@ -315,7 +353,7 @@ ggplot(sub_diff2, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25
   name = "Difference in Substrate (%) (MPA - State)",
 #  breaks = c(-1, -0.5, 0, 0.5, 1),
   labels = scales::percent_format(scale = 1, accuracy = 0.1),
-  limits = c(-11, 11)) +
+  limits = c(-12, 12)) +
   
   # Apply color and labels
   scale_fill_manual(
@@ -347,6 +385,9 @@ ccsr_sub <- st_intersection(ccsr,ca_sub_clean)
 ```
 
 ```{r}
+# Use total area of MPA in scsr
+total_ha_ccsr_mpas <- sum(ccsr_mpa$area_ha_ccsr)
+
 # Remove the unclassified observations
 ccsr_sub_clean <- ccsr_sub %>%
   filter(cmecs_sc_category != "Unclassified")
@@ -361,12 +402,12 @@ sub_ccsr <- ccsr_sub_simple %>%
   summarise(
     sub_area = sum(area_ha, na.rm = TRUE) / 10000,
   ) %>%
-  mutate(pct_sub = (sub_area /ccsr_area) * 100)
+  mutate(pct_sub = (sub_area / total_ha_ccsr_mpas) * 100)
 ```
 
 ```{r}
  # Create table
-kable(sub_ccsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total Central Coast Region")) %>%
+kable(sub_ccsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total Central Coast Region MPAs")) %>%
   kable_material(c("striped", "hover"))
 ```
 
@@ -403,8 +444,10 @@ cencal_sub_simple_2 <- cencal_sub_simple %>%
 ```
 
 ```{r}
- # Create table
-kable(cencal_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total Central Coast Region MPAS")) %>%
+cencal_sub_simple_2 <- drop_units(cencal_sub_simple_2)
+
+# Create table
+kable(cencal_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total Central Coast Region")) %>%
   kable_material(c("striped", "hover"))
 ```
 
@@ -444,7 +487,7 @@ ggplot(sub_diff3, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25
   name = "Difference in Substrate (%) (MPA - State)",
 #  breaks = c(-1, -0.5, 0, 0.5, 1),
   labels = scales::percent_format(scale = 1, accuracy = 0.1),
-  limits = c(-11, 11)) +
+  limits = c(-12, 12)) +
   
   # Apply color and labels
   scale_fill_manual(
@@ -477,6 +520,9 @@ nccsr_sub <- st_intersection(nccsr,ca_sub_clean)
 ```
 
 ```{r}
+# Use total area of MPA in scsr
+total_ha_nccsr_mpas <- sum(nccsr_mpa$area_ha_nccsr)
+
 # Remove the unclassified observations
 nccsr_sub_clean <- nccsr_sub %>%
   filter(cmecs_sc_category != "Unclassified")
@@ -491,12 +537,12 @@ sub_nccsr <- nccsr_sub_simple %>%
   summarise(
     sub_area = sum(area_ha, na.rm = TRUE) / 10000,
   ) %>%
-  mutate(pct_sub = (sub_area /nccsr_area) * 100)
+  mutate(pct_sub = (sub_area /total_ha_nccsr_mpas) * 100)
 ```
 
 ```{r}
  # Create table
-kable(sub_nccsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Central Coast Region")) %>%
+kable(sub_nccsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Central Coast Region MPAs")) %>%
   kable_material(c("striped", "hover"))
 ```
 
@@ -533,6 +579,7 @@ nccsr_sub_simple_2 <- nccsr_sub_simple %>%
 ```
 
 ```{r}
+nccsr_sub_simple_2 <- drop_units(nccsr_sub_simple_2)
  # Create table
 kable(nccsr_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Central Coast Region")) %>%
   kable_material(c("striped", "hover"))
@@ -572,7 +619,7 @@ ggplot(sub_diff4, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25
   name = "Difference in Substrate (%) (MPA - State)",
 #  breaks = c(-1, -0.5, 0, 0.5, 1),
   labels = scales::percent_format(scale = 1, accuracy = 0.1),
-  limits = c(-8, 8)) +
+  limits = c(-10, 10)) +
   
   # Apply color and labels
   scale_fill_manual(
@@ -604,6 +651,9 @@ ncsr_sub <- st_intersection(ncsr,ca_sub_clean)
 ```
 
 ```{r}
+# Use total area of MPA in scsr
+total_ha_ncsr_mpas <- sum(ncsr_mpa$area_ha_ncsr)
+
 # Remove the unclassified observations
 ncsr_sub_clean <- ncsr_sub %>%
   filter(cmecs_sc_category != "Unclassified")
@@ -618,12 +668,12 @@ sub_ncsr <- ncsr_sub_simple %>%
   summarise(
     sub_area = sum(area_ha, na.rm = TRUE) / 10000,
   ) %>%
-  mutate(pct_sub = (sub_area /ncsr_area) * 100)
+  mutate(pct_sub = (sub_area /total_ha_ncsr_mpas) * 100)
 ```
 
 ```{r}
  # Create table
-kable(sub_ncsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Coast Region")) %>%
+kable(sub_ncsr, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Coast Region MPAs")) %>%
   kable_material(c("striped", "hover"))
 ```
 
@@ -660,8 +710,9 @@ norcal_sub_simple_2 <- norcal_sub_simple %>%
 ```
 
 ```{r}
+norcal_sub_simple_2 <- drop_units(norcal_sub_simple_2)
  # Create table
-kable(norcal_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Coast Region MPAs")) %>%
+kable(norcal_sub_simple_2, col.names = c("Substrate Category", "Area in hectares", "Percent of Total North Coast Region")) %>%
   kable_material(c("striped", "hover"))
 ```
 
@@ -701,7 +752,7 @@ ggplot(sub_diff5, aes(x = Difference, y = reorder(str_wrap(cmecs_sc_category, 25
   name = "Difference in Substrate (%) (MPA - State)",
 #  breaks = c(-1, -0.5, 0, 0.5, 1),
   labels = scales::percent_format(scale = 1, accuracy = 0.1),
-  limits = c(-7, 7)) +
+  limits = c(-10, 10)) +
   
   # Apply color and labels
   scale_fill_manual(

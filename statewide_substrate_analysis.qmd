@@ -32,8 +32,9 @@ rds.dir <- "/capstone/marinebiomaps/data/rds-files"
 substrate <- readRDS(file.path(rds.dir, "substrate.rds")) %>% 
   filter(cmecs_sc_category != "Unclassified")
 
-# Project to CRS
-substrate <- st_transform(substrate, crs = 32610) %>% st_drop_geometry()
+# Project to CRS and filter to CA
+substrate <- st_transform(substrate, crs = 32610) %>%
+  filter(state == 'CA')
 ```
 
 ## Find percentages
@@ -73,6 +74,11 @@ if (nrow(invalid_percent) > 0) {
   message("All percent_of_total values are within the valid range (0-100).")
 }
 
+```
+
+```{r}
+# Check answer
+substrate$areacheck <- (st_area(substrate) / 1000)
 ```
 
 ## Plot
